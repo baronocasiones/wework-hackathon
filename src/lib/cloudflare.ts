@@ -7,7 +7,7 @@ const responseSchema = z.object({
   result: z.object({ image: z.string().min(1) }).optional(),
 });
 
-export async function cloudflareImage(prompt: string, runId: string): Promise<{ bytes: Buffer; mimeType: "image/jpeg" }> {
+export async function cloudflareImage(prompt: string, runId: string, operation = "artwork"): Promise<{ bytes: Buffer; mimeType: "image/jpeg" }> {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
   const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
   if (!account || !token) throw new Error("Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN to enable Cloudflare artwork.");
@@ -40,6 +40,6 @@ export async function cloudflareImage(prompt: string, runId: string): Promise<{ 
     if (error instanceof Error && error.message.startsWith("Cloudflare artwork")) throw error;
     throw new Error("Cloudflare artwork could not reach the API.");
   } finally {
-    recordAiCall({ runId, operation: "artwork", model, durationMs: Date.now() - started, outcome });
+    recordAiCall({ runId, operation, model, durationMs: Date.now() - started, outcome });
   }
 }

@@ -9,7 +9,9 @@ export async function providerError(response: Response, provider: string): Promi
   const body = await readJson(response);
   let message = typeof body === "object" && body !== null && "error" in body
     ? JSON.stringify(body.error) : JSON.stringify(body);
-  const knownSecrets = [process.env.META_PAGE_ACCESS_TOKEN, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REFRESH_TOKEN, process.env.OPENAI_API_KEY].filter((secret): secret is string => Boolean(secret));
+  const knownSecrets = [process.env.META_PAGE_ACCESS_TOKEN, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REFRESH_TOKEN,
+    process.env.GEMINI_API_KEY, process.env.CLOUDFLARE_API_TOKEN, process.env.FAL_KEY,
+    process.env.CLOUDINARY_API_SECRET, process.env.OPENAI_API_KEY].filter((secret): secret is string => Boolean(secret));
   for (const secret of knownSecrets) message = message.split(secret).join("[redacted]");
   message = message.replace(/("?(?:access_token|refresh_token|client_secret)"?\s*[:=]\s*")([^"]+)(")/gi, "$1[redacted]$3");
   const reason = response.status === 429 ? "rate_limited"

@@ -6,15 +6,19 @@ The studio works locally for content previews and demo sales without platform cr
 
 From `/home/adrian/codes/wework-hackathon`, copy `.env.example` to `.env.local`. Fill in the values as you set up each service. Keep `.env.local` out of Git. Restart both the app and the scheduling worker after changing it.
 
-## Generate artwork with Cloudflare
+## Create Publication Materials and text
 
-To test Cloudflare images, create an API token with Workers AI access in the [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens). Add your account ID as `CLOUDFLARE_ACCOUNT_ID` and the token as `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`, then restart the app. Cloudflare FLUX.1 Schnell is tried first for artwork and locally rendered video backgrounds. It does not generate captions or native video. The AI usage panel shows Cloudflare image token counts as unavailable because the image response does not provide them.
+To test either Publication Materials option, create an API token with Workers AI access in the [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens). Add your account ID as `CLOUDFLARE_ACCOUNT_ID` and the token as `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`, then restart the app. Cloudflare FLUX.1 Schnell is the only AI image provider. The template's Cloudflare background is generated once and reused when you edit its text. The AI usage panel shows Cloudflare image token counts as unavailable because its response does not provide them.
 
-1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey). Add it as `GEMINI_API_KEY` in `.env.local`. Keep `AI_PROVIDER=gemini` to try Gemini before OpenAI.
-2. Leave the model defaults in `.env.example` unless your account exposes different models. Gemini text generates captions and supports a free API tier. Gemini image generation and native video generation require a paid API tier. The video button tries [Gemini Omni Flash](https://ai.google.dev/gemini-api/docs/omni) for a native vertical clip, which can be shorter than 15 seconds. If that call fails, the studio uses Gemini artwork and FFmpeg to render a 15-second vertical video; this fallback still requires paid access to Gemini image generation. Check [Google's model pricing](https://ai.google.dev/gemini-api/docs/pricing) before testing.
-3. Restart the app, create one artwork pubmat and one video, and inspect **AI usage & account activity**. The studio records provider-reported token counts per call; a provider that supplies no token usage appears as **unavailable**. The creation source identifies whether video came from Gemini or local rendering.
+1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey). Add it as `GEMINI_API_KEY` in `.env.local` or `.env` to suggest titles, captions, and subtitles. Gemini is not used for artwork or video.
+2. Restart the app, create one template and one AI artwork Publication Materials item, and inspect **AI usage & account activity**. Gemini text calls show provider-reported token counts. Cloudflare image token counts appear as **unavailable**. Blank text also has local defaults if Gemini cannot respond.
 
-To add OpenAI as a fallback, create a key in the [OpenAI API dashboard](https://platform.openai.com/api-keys) and set `OPENAI_API_KEY`. When Gemini caption or artwork fails, the studio can try OpenAI. If you later want OpenAI first, set `AI_PROVIDER=openai`; Gemini then becomes the fallback. Never paste either key into the browser or chat. The editable template pubmat and uploads work without an AI key.
+## Test Grok moving video
+
+1. Open [fal's Grok Imagine sandbox](https://fal.ai/grok-imagine-free) and check the free runs or account pricing shown above **Generate**. Free eligibility varies by active offer; there is no promised daily quota. When a run is available, upload a starting image there, describe the motion, export the MP4, and upload it in the studio. This manual path needs no API key in the studio. A billing-locked fal account cannot upload to the sandbox.
+2. The free sandbox allowance does not cover automated text-to-video API calls. For that path, create a key in the [fal dashboard](https://fal.ai/dashboard/keys) and put it in `FAL_KEY` in `.env` or `.env.local`. Keep `FAL_KEY` blank until you are ready for billed API use. Do not paste the key into the studio or chat.
+3. Leave `FAL_VIDEO_DURATION=5` and `FAL_VIDEO_RESOLUTION=720p` for the first billed test. At [current fal pricing](https://fal.ai/models/xai/grok-imagine-video/v1.5/lite/text-to-video/api), this text-to-video test costs about $0.15. For the final 15-second Reel, set the duration to 15. Restart the app after changing the file.
+4. Use **Grok motion video** in the studio. The app requests a 9:16 clip through fal's Lite text-to-video endpoint, waits for the queue, saves the MP4, and shows it in the preview. The AI usage log records the call; token fields remain unavailable because the video response does not provide token counts.
 
 ## Host media for Meta
 
