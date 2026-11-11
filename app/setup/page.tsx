@@ -1,0 +1,13 @@
+import Link from "next/link";
+
+const items = [
+  { title: "Protect the operator studio", text: "Before using a public HTTPS tunnel, set STUDIO_USERNAME and a strong STUDIO_PASSWORD in .env.local. The browser asks for these credentials when you open the studio. The public product page remains accessible to shoppers." },
+  { title: "Public media and demo link", text: "Create a Cloudinary account and add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to .env.local. Set APP_URL to the public HTTPS tunnel address so captions and purchases use links other people can open." },
+  { title: "Meta Page and Instagram", text: "Add the team member as an app role, connect a Facebook Page to an Instagram professional account, and grant pages_show_list, pages_read_engagement, pages_manage_posts, instagram_basic, and instagram_content_publish. Add the Page ID, Page access token, and linked Instagram user ID to .env.local." },
+  { title: "YouTube channel", text: "Create an OAuth web client in Google Cloud, add http://localhost:3000/api/oauth/google/callback as an authorized redirect URI, and add the operator as a test user while the consent screen is in testing. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, and YOUTUBE_CHANNEL_ID. Then choose Connect YouTube in the app. The consent request uses youtube.upload and youtube.readonly." },
+  { title: "AI content", text: "Set OPENAI_API_KEY on the server. The prototype requests gpt-6-luna for copy and gpt-image-2.6-flare for artwork. Template pubmats and uploads remain available without AI credentials." },
+];
+
+export default function SetupPage() {
+  return <main className="setup-page"><div className="setup-wrap"><Link href="/" className="setup-back">← Back to studio</Link><p className="eyebrow">BEFORE YOUR FIRST LIVE POST</p><h1>Connect the accounts you’ll publish from.</h1><p className="setup-intro">Use server-side settings for provider credentials. The studio never asks you to paste secrets into its screens.</p><div className="setup-list">{items.map((item, index) => <article className="setup-item" key={item.title}><span>{String(index + 1).padStart(2, "0")}</span><div><h2>{item.title}</h2><p>{item.text}</p></div></article>)}</div><div className="setup-callout"><b>Live status stays clear.</b> Local media can be previewed and scheduled. The worker will stop at the media-host check until the file has a public Cloudinary HTTPS URL. A provider post is only shown as published after confirmation.</div><p className="setup-foot">For detailed account setup and API permission instructions, see the project files `README.md` and `SETUP.md`.</p></div></main>;
+}
