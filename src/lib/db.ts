@@ -59,6 +59,15 @@ export function db(): DatabaseSync {
   if (!contentColumns.some((column) => column.name === "template_headline")) connection.exec("ALTER TABLE content ADD COLUMN template_headline TEXT");
   if (!contentColumns.some((column) => column.name === "template_body")) connection.exec("ALTER TABLE content ADD COLUMN template_body TEXT");
   if (!contentColumns.some((column) => column.name === "subtitle")) connection.exec("ALTER TABLE content ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''");
+  if (!contentColumns.some((column) => column.name === "style")) connection.exec("ALTER TABLE content ADD COLUMN style TEXT");
+  connection.exec(`
+    CREATE TABLE IF NOT EXISTS generation_attempts (
+      id TEXT PRIMARY KEY, run_id TEXT NOT NULL, attempt INTEGER NOT NULL, kind TEXT NOT NULL,
+      score INTEGER, issues TEXT, revised_prompt TEXT, accepted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS gen_attempts_run ON generation_attempts(run_id);
+  `);
   globalThis.postHouseDatabase = connection;
   return connection;
 }
