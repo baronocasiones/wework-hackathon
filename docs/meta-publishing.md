@@ -65,3 +65,9 @@ Both must return JSON without an `error` key.
 - `src/lib/http.ts` — `providerError` redacts known secrets from error text
 - `src/lib/monitoring.ts` — credential observation events (values never stored)
 - `SETUP.md` §"Connect a Facebook Page and Instagram account" — operator runbook
+
+## Audit addendum (2026-11-12)
+
+- **The `uncertain` rough edge documented above is stale.** `src/worker/index.ts` has mapped `not configured` (and the other blocked-message patterns) to **`failed`** since `144bd21`. Live verification: no-credential FB/IG jobs end `failed` with the provider's "…is not configured" message and the badge reads "Needs attention", not "Check status".
+- Meta credentials remain blank/unconfigured; the demo-scope decision (live Meta posting out of scope) is unchanged.
+- A separate blocker affects *all* platforms including Meta: the worker script does not load `.env`, so it reports "not configured" even when credentials exist — see `docs/demo-readiness.md`.
