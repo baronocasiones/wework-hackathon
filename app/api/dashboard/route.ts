@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { jsonError } from "@/lib/http";
 import { googleAccessToken } from "@/lib/publish";
 import { falVideoReady } from "@/lib/fal-video";
+import { agentEnabled, dailyAgentCap, todayAgentCallCount } from "@/lib/agent-critique";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,11 @@ export async function GET(): Promise<Response> {
     const usage = database.prepare(`SELECT run_id,MIN(created_at) started_at,COUNT(*) calls,CASE WHEN COUNT(input_tokens)=0 THEN NULL ELSE SUM(input_tokens) END input_tokens,CASE WHEN COUNT(output_tokens)=0 THEN NULL ELSE SUM(output_tokens) END output_tokens,CASE WHEN COUNT(total_tokens)=0 THEN NULL ELSE SUM(total_tokens) END total_tokens,SUM(duration_ms) duration_ms FROM ai_calls GROUP BY run_id ORDER BY started_at DESC LIMIT 10`).all();
     const aiCalls = database.prepare("SELECT id,operation,model,input_tokens,output_tokens,total_tokens,duration_ms,outcome,created_at FROM ai_calls ORDER BY created_at DESC LIMIT 20").all();
     const credentialEvents = database.prepare("SELECT id,platform,event,expires_at,outcome,detail,created_at FROM credential_events ORDER BY created_at DESC LIMIT 10").all();
+    const attempts = database.prepare("SELECT attempt,score,accepted FROM generation_attempts ORDER BY created_at DESC LIMIT 50").all() as Array<{ attempt: number; score: number | null; accepted: number }>;
+    const avgScore = attempts.length ? Math.round(attempts.reduce((t, a) => t + (a.score ?? 0), 0) / attempts.length) : null;
+    const acceptedCount = attempts.filter((a) => a.accepted === 1).length;
     return Response.json({ metrics, jobs: recentJobs, backlog, usage, aiCalls, credentialEvents,
+      agent: { enabled: agentEnabled(), dailyCap: dailyAgentCap(), todayCount: todayAgentCallCount(), attempts: attempts.length, avgScore, acceptedCount },
       configured: { falVideo: falVideoReady(), cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN), gemini: Boolean(process.env.GEMINI_API_KEY), cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET), meta: Boolean(process.env.META_PAGE_ID && process.env.META_PAGE_ACCESS_TOKEN && process.env.META_IG_USER_ID), google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && (process.env.GOOGLE_REFRESH_TOKEN || database.prepare("SELECT value FROM app_secrets WHERE key='google_refresh_token'").get())), publicLinks: (process.env.APP_URL ?? "http://localhost:8000").startsWith("https://") && !/localhost|127\.0\.0\.1/i.test(process.env.APP_URL ?? "http://localhost:8000") } });
   } catch (error) { return jsonError(error instanceof Error ? error.message : "Dashboard is unavailable.", 500); }
 }
