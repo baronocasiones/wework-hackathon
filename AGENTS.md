@@ -86,6 +86,13 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Conventions established: `PublishOutcome` discriminated union replaces string matching; `PublishError` class with `PublishFailureReason`; module-level token cache (50-min TTL, 60s stale-gate); `withTimeout` pattern; baseline-gate pattern for findings.
 - Tests: 23/23 pass (added `schedule.test.ts`, `youtube-outcome.test.ts`). Typecheck + build clean. No new dependencies.
 
+### 2026-11-12 — Generation agent model fix + token verification (live verified)
+
+- Fixed: default vision model `gemini-2.0-flash` (unavailable) → `gemini-3.1-flash-lite`; added mime-type auto-detection (PNG/JPEG) in critique; normalized usageMetadata → input/output/total tokens so critique calls record real token counts.
+- Verified: critique now succeeds (outcome success, 1207 input / 137 output / 1344 total tokens, ~2.5s). Agent loop scores real images. Token cost per artwork confirmed ~1,488 Gemini tokens (~$0.0001-0.0002).
+- Removed debug console.error. Updated .env.example default. Updated test expectation (gemini-3.1-flash-lite).
+- Tests: 22/22 pass. Typecheck + build clean.
+
 ### 2026-11-12 — Generation + agent loop + retry endpoint (live verified)
 
 - Implemented: style system (6 presets, `recommendStyle`), Cloudflare tuning (steps 4→8, model env), template rendering fixes (dynamic font size, fontfile env), video audio probe + optional ambient mux, runtime agent critique loop (Gemini vision, max 3 images/2 videos, score≥70, daily cap 50), `POST /api/jobs/[id]/retry`, dashboard agent metrics, UI style display + Retry button.

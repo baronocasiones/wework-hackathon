@@ -32,3 +32,5 @@ Existing 22 tests updated to reflect style/critique calls; new logic covered by 
 ## Live verification (2026-11-12)
 
 Verified against real credentials (.env): Gemini style recommendation returned `warm_market`; Gemini vision critique scored a real JPEG 100/100; Cloudflare artwork + template generated and uploaded to Cloudinary; Grok video generated and uploaded, ffprobe confirms audio stream present; agent loop ran on both (attempts=2, avgScore=100); dashboard agent panel live; retry endpoint re-queued a real failed Facebook job. Cloudflare/fal paths exercised end-to-end. Ambient mux not needed (fal clips contain audio).
+
+Follow-up (2026-11-12): default vision model corrected from unavailable `gemini-2.0-flash` to `gemini-3.1-flash-lite`; image mime type auto-detected (PNG vs JPEG); critique token usage normalized and recorded (1207 input / 137 output / 1344 total per critique). Verified end-to-end: critique now succeeds with recorded tokens.
