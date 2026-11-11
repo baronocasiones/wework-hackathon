@@ -56,6 +56,7 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - **Meta publishing** — see `docs/meta-publishing.md`. Implemented, unverified, deliberately left unconfigured for the demo.
 - **Demo readiness** — see `docs/demo-readiness.md`. Audited 2026-11-12; the listed blockers (worker `.env`, OAuth port, Gemini vars) are **stale** — corrected in `docs/architecture.md` §8 and flagged in that file's "Superseded claims" section.
 - **Architecture** — see `docs/architecture.md`. Added 2026-11-12; owns topology, module map, data model, job invariants, and integration boundaries. Answers the monolith question (modular monolith + sidecar worker) and corrects stale claims in the other docs.
+- **Pipeline (schedule → publish → worker)** — see `docs/pipeline.md`. Added 2026-11-12; owns pipeline behavior, outcome taxonomy, free-tier budget, findings (C1–M6), and implementation status. C1–C3, H1–H3, M3–M6 implemented; M1 (streaming) deferred.
 - Everything else has no module doc yet.
 
 ## Session History
@@ -77,6 +78,12 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Correction: the worker maps "publishing is not configured" to **`failed`**, not `uncertain` — the previous session's rough edge was already fixed in `144bd21`. `docs/meta-publishing.md` addended.
 - New blockers documented in `docs/demo-readiness.md`: (1) worker script doesn't load `.env` (needs `--env-file`) so all publishes fail unconfigured regardless of creds; (2) `GOOGLE_REDIRECT_URI` points at port 8000 while the app runs on 3000; (3) `GEMINI_*`/`AI_PROVIDER` vars are inert — code reads `OPENAI_API_KEY` only; (4) `GOOGLE_REFRESH_TOKEN` empty pending the Connect flow; (5) no `published` demo path for FB/IG (Meta out of scope by prior decision).
 - Conventions: security/rate-limiting remain deferred; demo scope is main feature only; `npm test`/typecheck/build must be run after any fresh clone (node_modules absent).
+
+### 2026-11-12 — Pipeline implementation (C1–C3, H1–H3, M3–M6)
+
+- Implemented: outcome model (C3), fetch timeout (C1), YouTube confirmation (C2), dashboard quota fix (H1), token cache (H2), schedule error masking (H3), backlog metric (M3), graceful shutdown (M4), post-now collision handling (M5), dead code removal (M6). M1 (streaming) deferred.
+- Conventions established: `PublishOutcome` discriminated union replaces string matching; `PublishError` class with `PublishFailureReason`; module-level token cache (50-min TTL, 60s stale-gate); `withTimeout` pattern; baseline-gate pattern for findings.
+- Tests: 23/23 pass (added `schedule.test.ts`, `youtube-outcome.test.ts`). Typecheck + build clean. No new dependencies.
 
 ### 2026-11-12 — Architecture documentation (modular monolith audit)
 

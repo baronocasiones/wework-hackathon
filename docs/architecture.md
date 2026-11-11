@@ -405,3 +405,11 @@ flowchart LR
 | Understand Meta credentials | `docs/meta-publishing.md` |
 
 **Tests** pin the load-bearing invariants: `tests/jobs.test.ts` (claim one-shot, restart recovery), `tests/domain.test.ts` (platform rules, caption limits), `tests/monitoring.test.ts` (no secret leakage), `tests/gemini.test.ts` (request shapes, usage recording), `tests/generation-fallback.test.ts` (provider fallback, FFmpeg render). Route handlers are invoked directly with constructed `Request` objects.
+
+## 10. Implementation update (2026-11-12)
+
+- Outcome taxonomy is no longer string matching: `publishJob` returns `PublishOutcome` (`published`/`needs_review`/`failed`); worker maps `outcome.kind` → status. The regex in `worker/index.ts:25-27` is removed.
+- `markJobStarted` deleted (was dead code); `claimDueJob` remains the claim path.
+- `publish_jobs` schema unchanged; no migration needed.
+- Dashboard no longer writes `credential_events` on every poll (token cached, stats stale-gated).
+- New module doc: `docs/pipeline.md` (pipeline behavior, findings, implementation status).
