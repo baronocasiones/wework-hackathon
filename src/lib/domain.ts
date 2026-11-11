@@ -40,12 +40,19 @@ export const credentialEventSchema = z.object({
   outcome: z.enum(["success", "failed"]),
 });
 
-export const publishResultSchema = z.object({
-  providerId: z.string().min(1),
-  permalink: z.string().url().nullable(),
-  confirmation: z.enum(["confirmed", "accepted_pending", "uncertain"]),
-});
-export type PublishResult = z.infer<typeof publishResultSchema>;
+export type PublishFailureReason =
+  | "not_configured" | "not_enabled" | "incomplete" | "does_not_match"
+  | "connect_cloudinary" | "preview_only" | "public_app_url" | "set_app_url"
+  | "rejected_4xx" | "rate_limited" | "timeout" | "unknown";
+
+export type PublishOutcome =
+  | { kind: "published";    providerId: string; permalink: string }
+  | { kind: "needs_review"; providerId: string; permalink: string | null; reason: "accepted_pending" | "uncertain" }
+  | { kind: "failed";       reason: PublishFailureReason; detail: string };
+
+export class PublishError extends Error {
+  constructor(readonly reason: PublishFailureReason, message: string) { super(message); }
+}
 
 export function parseUsage(raw: unknown): { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } {
   const candidate = typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : raw;

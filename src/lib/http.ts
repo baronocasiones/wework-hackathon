@@ -1,3 +1,5 @@
+import { PublishError } from "@/lib/domain";
+
 export async function readJson(response: Response): Promise<unknown> {
   const text = await response.text();
   try { return JSON.parse(text) as unknown; } catch { return { message: text.slice(0, 500) }; }
@@ -10,7 +12,10 @@ export async function providerError(response: Response, provider: string): Promi
   const knownSecrets = [process.env.META_PAGE_ACCESS_TOKEN, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REFRESH_TOKEN, process.env.OPENAI_API_KEY].filter((secret): secret is string => Boolean(secret));
   for (const secret of knownSecrets) message = message.split(secret).join("[redacted]");
   message = message.replace(/("?(?:access_token|refresh_token|client_secret)"?\s*[:=]\s*")([^"]+)(")/gi, "$1[redacted]$3");
-  throw new Error(`${provider} returned ${response.status}: ${message.slice(0, 500)}`);
+  const reason = response.status === 429 ? "rate_limited"
+    : response.status >= 400 && response.status < 500 ? "rejected_4xx"
+    : "unknown";
+  throw new PublishError(reason, `${provider} returned ${response.status}: ${message.slice(0, 500)}`);
 }
 
 export function jsonError(message: string, status = 400): Response {

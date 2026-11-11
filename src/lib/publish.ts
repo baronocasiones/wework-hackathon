@@ -1,5 +1,6 @@
 import { db, nowIso } from "@/lib/db";
-import { type Platform, type PublishResult } from "@/lib/domain";
+import { type Platform, type PublishOutcome, type PublishFailureReason, PublishError } from "@/lib/domain";
+export { PublishError };
 import { loadPublicMedia } from "@/lib/media";
 import { observeCredential, recordCredentialEvent } from "@/lib/monitoring";
 import { providerError } from "@/lib/http";
@@ -13,10 +14,10 @@ export class PartialPublishError extends Error {
   constructor(message: string, readonly providerId: string, readonly permalink: string | null = null) { super(message); }
 }
 
-async function facebook(job: Job): Promise<PublishResult> {
+async function facebook(job: Job): Promise<PublishOutcome> {
   const token = process.env.META_PAGE_ACCESS_TOKEN;
   const pageId = process.env.META_PAGE_ID;
-  if (!token || !pageId) throw new Error("Facebook publishing is not configured. Set META_PAGE_ID and META_PAGE_ACCESS_TOKEN.");
+  if (!token || !pageId) throw new PublishError("not_configured", "Facebook publishing is not configured. Set META_PAGE_ID and META_PAGE_ACCESS_TOKEN.");
   assertLiveMediaUrl(job.media_url);
   observeCredential({ platform: "meta", secret: token });
   const base = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION ?? "v23.0"}`;
@@ -29,10 +30,10 @@ async function facebook(job: Job): Promise<PublishResult> {
     if (!response.ok) await providerError(response, "Facebook");
     const data = asRecord(await response.json());
     const postId = stringField(data, "post_id") ?? stringField(data, "id");
-    if (!postId) throw new Error("Facebook accepted no post ID; outcome requires review.");
+    if (!postId) throw new PublishError("incomplete", "Facebook accepted no post ID; outcome requires review.");
     const permalink = await facebookPermalink(base, postId, token);
-    if (!permalink) return { providerId: postId, permalink: null, confirmation: "uncertain" };
-    return { providerId: postId, permalink, confirmation: "confirmed" };
+    if (!permalink) return { kind: "needs_review", providerId: postId, permalink: null, reason: "uncertain" };
+    return { kind: "published", providerId: postId, permalink };
   }
   const begin = new URLSearchParams({ upload_phase: "start", access_token: token });
   const beginResponse = await fetch(`${base}/me/video_reels?${begin}`, { method: "POST" });
@@ -40,10 +41,10 @@ async function facebook(job: Job): Promise<PublishResult> {
   const beginData = asRecord(await beginResponse.json());
   const videoId = stringField(beginData, "video_id");
   const uploadUrl = stringField(beginData, "upload_url");
-  if (!videoId || !uploadUrl) throw new Error("Facebook returned an incomplete Reel upload session; outcome requires review.");
+  if (!videoId || !uploadUrl) throw new PublishError("incomplete", "Facebook returned an incomplete Reel upload session; outcome requires review.");
   const bytes = await loadPublicMedia(job.media_url);
   const upload = await fetch(uploadUrl, { method: "POST", headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(bytes.byteLength) }, body: new Uint8Array(bytes) });
-  if (!upload.ok) throw new Error(`Facebook Reel media upload failed with status ${upload.status}.`);
+  if (!upload.ok) throw new PublishError(upload.status >= 400 && upload.status < 500 ? "rejected_4xx" : "unknown", `Facebook Reel media upload failed with status ${upload.status}.`);
   const finish = new URLSearchParams({ upload_phase: "finish", video_id: videoId, video_state: "PUBLISHED", description: job.caption, access_token: token });
   const finishResponse = await fetch(`${base}/me/video_reels?${finish}`, { method: "POST" });
   if (!finishResponse.ok) {
@@ -51,9 +52,9 @@ async function facebook(job: Job): Promise<PublishResult> {
     catch (error) { throw new PartialPublishError(error instanceof Error ? error.message : "Facebook Reel confirmation was unavailable.", videoId); }
   }
   const finishData = asRecord(await finishResponse.json());
-  if (finishData.success !== true) throw new Error("Facebook did not confirm the Reel publish; outcome requires review.");
+  if (finishData.success !== true) throw new PublishError("incomplete", "Facebook did not confirm the Reel publish; outcome requires review.");
   const permalink = await facebookPermalink(base, videoId, token);
-  return { providerId: videoId, permalink, confirmation: permalink ? "confirmed" : "uncertain" };
+  return permalink ? { kind: "published", providerId: videoId, permalink } : { kind: "needs_review", providerId: videoId, permalink: null, reason: "uncertain" };
 }
 
 async function facebookPermalink(base: string, id: string, token: string): Promise<string | null> {
@@ -63,10 +64,10 @@ async function facebookPermalink(base: string, id: string, token: string): Promi
   return stringField(data, "permalink_url");
 }
 
-async function instagram(job: Job): Promise<PublishResult> {
+async function instagram(job: Job): Promise<PublishOutcome> {
   const token = process.env.META_PAGE_ACCESS_TOKEN;
   const accountId = process.env.META_IG_USER_ID;
-  if (!token || !accountId) throw new Error("Instagram publishing is not configured. Set META_PAGE_ACCESS_TOKEN and META_IG_USER_ID.");
+  if (!token || !accountId) throw new PublishError("not_configured", "Instagram publishing is not configured. Set META_PAGE_ACCESS_TOKEN and META_IG_USER_ID.");
   assertLiveMediaUrl(job.media_url);
   observeCredential({ platform: "meta", secret: token });
   const base = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION ?? "v23.0"}`;
@@ -76,7 +77,7 @@ async function instagram(job: Job): Promise<PublishResult> {
   const containerResponse = await fetch(`${base}/${encodeURIComponent(accountId)}/media`, { method: "POST", body: create });
   if (!containerResponse.ok) await providerError(containerResponse, "Instagram");
   const containerId = stringField(asRecord(await containerResponse.json()), "id");
-  if (!containerId) throw new Error("Instagram returned no media container ID; outcome requires review.");
+  if (!containerId) throw new PublishError("incomplete", "Instagram returned no media container ID; outcome requires review.");
   if (job.kind === "video") {
     let ready = false;
     for (let attempt = 0; attempt < 18; attempt += 1) {
@@ -85,24 +86,24 @@ async function instagram(job: Job): Promise<PublishResult> {
       if (!statusResponse.ok) await providerError(statusResponse, "Instagram");
       const status = stringField(asRecord(await statusResponse.json()), "status_code");
       if (status === "FINISHED") { ready = true; break; }
-      if (status === "ERROR" || status === "EXPIRED") throw new Error(`Instagram Reel processing ended in ${status}.`);
+      if (status === "ERROR" || status === "EXPIRED") throw new PublishError("rejected_4xx", `Instagram Reel processing ended in ${status}.`);
     }
-    if (!ready) return { providerId: containerId, permalink: null, confirmation: "uncertain" };
+    if (!ready) return { kind: "needs_review", providerId: containerId, permalink: null, reason: "uncertain" };
   }
   const publish = new URLSearchParams({ creation_id: containerId, access_token: token });
   const publishResponse = await fetch(`${base}/${encodeURIComponent(accountId)}/media_publish`, { method: "POST", body: publish });
   if (!publishResponse.ok) await providerError(publishResponse, "Instagram");
   const mediaId = stringField(asRecord(await publishResponse.json()), "id");
-  if (!mediaId) throw new Error("Instagram returned no published media ID; outcome requires review.");
+  if (!mediaId) throw new PublishError("incomplete", "Instagram returned no published media ID; outcome requires review.");
   const permalinkResponse = await fetch(`${base}/${encodeURIComponent(mediaId)}?fields=permalink&access_token=${encodeURIComponent(token)}`);
-  if (!permalinkResponse.ok) return { providerId: mediaId, permalink: null, confirmation: "uncertain" };
+  if (!permalinkResponse.ok) return { kind: "needs_review", providerId: mediaId, permalink: null, reason: "uncertain" };
   const permalink = stringField(asRecord(await permalinkResponse.json()), "permalink");
-  return { providerId: mediaId, permalink, confirmation: permalink ? "confirmed" : "uncertain" };
+  return permalink ? { kind: "published", providerId: mediaId, permalink } : { kind: "needs_review", providerId: mediaId, permalink: null, reason: "uncertain" };
 }
 
-async function youtube(job: Job): Promise<PublishResult> {
+async function youtube(job: Job): Promise<PublishOutcome> {
   const channelId = process.env.YOUTUBE_CHANNEL_ID;
-  if (!channelId) throw new Error("YouTube publishing is not configured. Set YOUTUBE_CHANNEL_ID.");
+  if (!channelId) throw new PublishError("not_configured", "YouTube publishing is not configured. Set YOUTUBE_CHANNEL_ID.");
   assertLiveMediaUrl(job.media_url);
   const token = await googleAccessToken();
   const metadata = { snippet: { title: job.title.slice(0, 100), description: job.caption, categoryId: "22" }, status: { privacyStatus: "public", selfDeclaredMadeForKids: false } };
@@ -111,33 +112,45 @@ async function youtube(job: Job): Promise<PublishResult> {
   });
   if (!init.ok) await providerError(init, "YouTube");
   const uploadUrl = init.headers.get("location");
-  if (!uploadUrl) throw new Error("YouTube returned no resumable upload URL; outcome requires review.");
+  if (!uploadUrl) throw new PublishError("incomplete", "YouTube returned no resumable upload URL; outcome requires review.");
   const media = await loadPublicMedia(job.media_url);
   const upload = await fetch(uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "video/mp4", "Content-Length": String(media.byteLength) }, body: new Uint8Array(media) });
   if (!upload.ok) await providerError(upload, "YouTube");
   const data = asRecord(await upload.json());
   const videoId = stringField(data, "id");
-  if (!videoId) throw new Error("YouTube returned no video ID; outcome requires review.");
+  if (!videoId) throw new PublishError("incomplete", "YouTube returned no video ID; outcome requires review.");
   const permalink = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   const verifyParams = new URLSearchParams({ part: "snippet,status,processingDetails", id: videoId });
   const verification = await fetch(`https://www.googleapis.com/youtube/v3/videos?${verifyParams}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!verification.ok) return { providerId: videoId, permalink, confirmation: "accepted_pending" };
+  if (!verification.ok) return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
   const verifiedData = asRecord(await verification.json());
   const first = Array.isArray(verifiedData.items) ? asRecord(verifiedData.items[0]) : {};
   const snippet = asRecord(first.snippet);
   const status = asRecord(first.status);
   const processing = asRecord(first.processingDetails);
-  if (stringField(snippet, "channelId") !== channelId || stringField(status, "uploadStatus") !== "processed" || stringField(status, "privacyStatus") !== "public" || stringField(processing, "processingStatus") === "failed") {
-    return { providerId: videoId, permalink, confirmation: "accepted_pending" };
+  const uploadStatus = stringField(status, "uploadStatus");
+  if (uploadStatus === "failed" || uploadStatus === "rejected") {
+    throw new PublishError("rejected_4xx", `YouTube upload ended in ${uploadStatus}.`);
   }
-  return { providerId: videoId, permalink, confirmation: "confirmed" };
+  if (uploadStatus !== "processed") {
+    return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
+  }
+  if (stringField(snippet, "channelId") !== channelId || stringField(status, "privacyStatus") !== "public" || stringField(processing, "processingStatus") === "failed") {
+    return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
+  }
+  return { kind: "published", providerId: videoId, permalink };
 }
 
+let cachedGoogleToken: { token: string; expiresAt: number } | null = null;
+
 export async function googleAccessToken(): Promise<string> {
+  if (cachedGoogleToken && Date.now() < cachedGoogleToken.expiresAt - 60_000) {
+    return cachedGoogleToken.token;
+  }
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || (db().prepare("SELECT value FROM app_secrets WHERE key='google_refresh_token'").get() as { value?: string } | undefined)?.value;
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  if (!refreshToken || !clientId || !clientSecret) throw new Error("YouTube publishing is not configured. Complete Google OAuth setup in Settings.");
+  if (!refreshToken || !clientId || !clientSecret) throw new PublishError("not_configured", "YouTube publishing is not configured. Complete Google OAuth setup in Settings.");
   observeCredential({ platform: "google", secret: refreshToken });
   const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }) });
@@ -147,30 +160,28 @@ export async function googleAccessToken(): Promise<string> {
   }
   const data = asRecord(await response.json());
   const token = stringField(data, "access_token");
-  if (!token) throw new Error("Google OAuth returned no access token.");
+  if (!token) throw new PublishError("not_configured", "Google OAuth returned no access token.");
   const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 3600;
-  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  const expiresAtMs = Date.now() + expiresIn * 1000;
+  const expiresAt = new Date(expiresAtMs).toISOString();
   recordCredentialEvent({ platform: "google", event: "refreshed", expiresAt, outcome: "success", detail: "Access token refreshed; secret value omitted." });
   const channelsResponse = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", { headers: { Authorization: `Bearer ${token}` } });
   if (!channelsResponse.ok) await providerError(channelsResponse, "YouTube channel check");
   const channelData = asRecord(await channelsResponse.json());
   const actualId = Array.isArray(channelData.items) ? stringField(asRecord(channelData.items[0]), "id") : null;
-  if (!actualId || actualId !== process.env.YOUTUBE_CHANNEL_ID) throw new Error("Connected Google account does not match YOUTUBE_CHANNEL_ID.");
+  if (!actualId || actualId !== process.env.YOUTUBE_CHANNEL_ID) throw new PublishError("not_configured", "Connected Google account does not match YOUTUBE_CHANNEL_ID.");
+  cachedGoogleToken = { token, expiresAt: expiresAtMs };
   return token;
 }
 
 function assertLiveMediaUrl(url: string): void {
-  if (!url.startsWith("https://res.cloudinary.com/")) throw new Error("Connect Cloudinary and upload public HTTPS media before live publishing. This local file remains preview-only.");
+  if (!url.startsWith("https://res.cloudinary.com/")) throw new PublishError("connect_cloudinary", "Connect Cloudinary and upload public HTTPS media before live publishing. This local file remains preview-only.");
   const appUrl = process.env.APP_URL ?? "http://localhost:8000";
-  if (!appUrl.startsWith("https://") || /localhost|127\.0\.0\.1/i.test(appUrl)) throw new Error("Set APP_URL to a public HTTPS address before live publishing. Product tracking links are local-only right now.");
+  if (!appUrl.startsWith("https://") || /localhost|127\.0\.0\.1/i.test(appUrl)) throw new PublishError("public_app_url", "Set APP_URL to a public HTTPS address before live publishing. Product tracking links are local-only right now.");
 }
 
-export async function publishJob(job: Job): Promise<{ result: PublishResult; status: "published" | "needs_review" }> {
-  const result = job.platform === "facebook" ? await facebook(job) : job.platform === "instagram" ? await instagram(job) : await youtube(job);
-  return { result, status: result.confirmation === "confirmed" ? "published" : "needs_review" };
+export async function publishJob(job: Job): Promise<PublishOutcome> {
+  return job.platform === "facebook" ? await facebook(job) : job.platform === "instagram" ? await instagram(job) : await youtube(job);
 }
 
-export async function markJobStarted(jobId: string): Promise<boolean> {
-  const changed = db().prepare("UPDATE publish_jobs SET status='processing',attempts=attempts+1,updated_at=? WHERE id=? AND status='queued'").run(nowIso(), jobId);
-  return changed.changes === 1;
-}
+// markJobStarted removed: dead code. The real claim path is claimDueJob (src/lib/jobs.ts).
