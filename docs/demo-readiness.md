@@ -39,3 +39,10 @@ Scope: everything required to run the actual demo — install → generate → s
 - Demo scope = main feature only; security work (auth hardening, rate limiting) deferred by operator decision.
 - Secrets stay server-side in `.env`; never printed or logged (audits report key names and lengths only).
 - Both `npm run dev` and `npm run worker` must run for scheduled posts; only the Next.js process sees `.env` until gap 1 is fixed.
+
+## Superseded claims (appended 2026-11-12, architecture session)
+
+- **Gaps 1 and 3 above are stale.** `package.json:9` now passes `--env-file-if-exists=.env --env-file-if-exists=.env.local` to the worker, and `src/lib/generation.ts:14` implements a Gemini-first `providerOrder()` (commit `c4d3166`). The worker is not unconfigured by default, and the Gemini variables are live.
+- **Gap 2 is stale too.** `package.json:6,8` pins the app to port **8000**, matching `GOOGLE_REDIRECT_URI`; there is no port mismatch.
+- The test count in the table above (7/7) is also outdated: 18 test cases across 5 files.
+- Full correction table with file evidence: `docs/architecture.md` §8. This file is authoritative for module behavior; `docs/architecture.md` is authoritative for architecture and for these corrections.

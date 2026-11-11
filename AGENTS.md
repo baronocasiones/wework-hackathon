@@ -41,7 +41,7 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Every privileged route is gated by `middleware.ts`; the app refuses public access when `STUDIO_PASSWORD` is blank.
 - One `publish_jobs` row per content × platform × scheduled time (`UNIQUE(content_id, platform, scheduled_at)`).
 - A job becomes `published` only on a provider ID **and** a confirmed permalink / public processing state. Ambiguous outcomes become `uncertain` or `needs_review` and are never auto-retried. Known 4xx rejections become `failed`.
-- Optimistic status transitions: `markJobStarted` / publish-now update only `WHERE status='queued'`, so races fail closed.
+- Optimistic status transitions: `claimDueJob` / publish-now update only `WHERE status='queued'`, so races fail closed. (`markJobStarted` in `publish.ts` is dead code; see `docs/architecture.md`.)
 - Media must be a public Cloudinary HTTPS URL and `APP_URL` must be a non-local HTTPS address before live publishing (`assertLiveMediaUrl`).
 - Platform branches are isolated functions in `src/lib/publish.ts`; adding a platform means extending the enum in `domain.ts` and the switch in `publishJob`.
 - No Meta OAuth route exists; Meta credentials are paste-in env values. Google/YouTube is the only OAuth flow.
@@ -54,7 +54,8 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 ## Module status
 
 - **Meta publishing** — see `docs/meta-publishing.md`. Implemented, unverified, deliberately left unconfigured for the demo.
-- **Demo readiness** — see `docs/demo-readiness.md`. Audited 2026-11-12; open blockers: worker doesn't load `.env`, OAuth redirect port mismatch, Gemini vars inert.
+- **Demo readiness** — see `docs/demo-readiness.md`. Audited 2026-11-12; the listed blockers (worker `.env`, OAuth port, Gemini vars) are **stale** — corrected in `docs/architecture.md` §8 and flagged in that file's "Superseded claims" section.
+- **Architecture** — see `docs/architecture.md`. Added 2026-11-12; owns topology, module map, data model, job invariants, and integration boundaries. Answers the monolith question (modular monolith + sidecar worker) and corrects stale claims in the other docs.
 - Everything else has no module doc yet.
 
 ## Session History
@@ -76,3 +77,12 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Correction: the worker maps "publishing is not configured" to **`failed`**, not `uncertain` — the previous session's rough edge was already fixed in `144bd21`. `docs/meta-publishing.md` addended.
 - New blockers documented in `docs/demo-readiness.md`: (1) worker script doesn't load `.env` (needs `--env-file`) so all publishes fail unconfigured regardless of creds; (2) `GOOGLE_REDIRECT_URI` points at port 8000 while the app runs on 3000; (3) `GEMINI_*`/`AI_PROVIDER` vars are inert — code reads `OPENAI_API_KEY` only; (4) `GOOGLE_REFRESH_TOKEN` empty pending the Connect flow; (5) no `published` demo path for FB/IG (Meta out of scope by prior decision).
 - Conventions: security/rate-limiting remain deferred; demo scope is main feature only; `npm test`/typecheck/build must be run after any fresh clone (node_modules absent).
+
+### 2026-11-12 — Architecture documentation (modular monolith audit)
+
+- No code changes, no API endpoints defined, no dependencies added. Created `docs/architecture.md` (9 sections, 8 mermaid diagrams) answering the operator's question: the repo is a **modular monolith with a sidecar worker process** — one deployable unit, two OS processes, one SQLite file as the only runtime coupling, no service boundaries. Code organization is modular; deployment, data, and domain are monolithic.
+- Method: architect skill workflow. Three parallel explorer passes (app/HTTP layer, domain/persistence core, runtime topology/integrations) grounded the model; an arena of three candidate doc designs followed — all three independently reached the same verdict, so no re-run was needed. Candidate 1 became the base; grafts came from Candidates 2 and 3 (four-senses verdict table, outcome-taxonomy diagram, exhaustive stale-claim corrections, scaling notes). Cross-judge skipped: no cross-family model available without guessing model IDs.
+- Created `docs/architecture.jpg` (1420×994) — D1 process topology rendered from the doc's own mermaid source via headless Chrome at 3× scale, trimmed, white margin. A pointer line was added under the doc's scope paragraph.
+- Conventions established: `docs/architecture.md` owns topology, module map, data model, job invariants, flows, and integration boundaries; module docs own module behavior; `AGENTS.md` owns commands and conventions. Stale claims are corrected in the architecture doc rather than by rewriting the stale docs. Rendered diagrams are generated from the doc's mermaid source so image and source cannot drift.
+- Corrected in `AGENTS.md`: the optimistic-transition convention cited dead `markJobStarted`; the real claim path is `claimDueJob` (`src/lib/jobs.ts:10-14`).
+- Additive "superseded claims" notes appended to `docs/demo-readiness.md` and `docs/meta-publishing.md`, both pointing at `docs/architecture.md` §8. No existing content was removed from any doc.

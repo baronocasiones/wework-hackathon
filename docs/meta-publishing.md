@@ -71,3 +71,8 @@ Both must return JSON without an `error` key.
 - **The `uncertain` rough edge documented above is stale.** `src/worker/index.ts` has mapped `not configured` (and the other blocked-message patterns) to **`failed`** since `144bd21`. Live verification: no-credential FB/IG jobs end `failed` with the provider's "…is not configured" message and the badge reads "Needs attention", not "Check status".
 - Meta credentials remain blank/unconfigured; the demo-scope decision (live Meta posting out of scope) is unchanged.
 - A separate blocker affects *all* platforms including Meta: the worker script does not load `.env`, so it reports "not configured" even when credentials exist — see `docs/demo-readiness.md`.
+
+## Addendum 2 (2026-11-12, architecture session)
+
+- **The worker `.env` blocker above is stale.** `package.json:9` passes `--env-file-if-exists=.env --env-file-if-exists=.env.local`, so the worker does load credentials. The no-credential `failed` classification in the addendum above stands.
+- Full correction table with file evidence: `docs/architecture.md` §8.
