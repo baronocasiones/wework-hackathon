@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
   if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
   const password = process.env.STUDIO_PASSWORD;
   const configuredHost = (() => {
-    try { return new URL(process.env.APP_URL ?? "http://localhost:3000").hostname; }
+    try { return new URL(process.env.APP_URL ?? "http://localhost:8000").hostname; }
     catch { return "invalid"; }
   })();
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim().split(":")[0] ?? "localhost";

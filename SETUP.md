@@ -6,13 +6,13 @@ The studio works locally for content previews and demo sales without platform cr
 
 From `/home/adrian/codes/wework-hackathon`, copy `.env.example` to `.env.local`. Fill in the values as you set up each service. Keep `.env.local` out of Git. Restart both the app and the scheduling worker after changing it.
 
-## Connect OpenAI
+## Generate with Gemini first
 
-1. Create an API key in the [OpenAI API dashboard](https://platform.openai.com/api-keys).
-2. Set `OPENAI_API_KEY` in `.env.local`. Leave `OPENAI_TEXT_MODEL=gpt-6-luna` and `OPENAI_IMAGE_MODEL=gpt-image-2.6-flare` unless your account lacks access to either model.
-3. Generate one caption and one artwork in the studio. Check that the monitoring page records each call and the token values returned by OpenAI.
+1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey). Add it as `GEMINI_API_KEY` in `.env.local`. Keep `AI_PROVIDER=gemini` to try Gemini before OpenAI.
+2. Leave the model defaults in `.env.example` unless your account exposes different models. Gemini text generates captions and supports a free API tier. Gemini image generation and native video generation require a paid API tier. The video button tries [Gemini Omni Flash](https://ai.google.dev/gemini-api/docs/omni) for a native vertical clip, which can be shorter than 15 seconds. If that call fails, the studio uses Gemini artwork and FFmpeg to render a 15-second vertical video; this fallback still requires paid access to Gemini image generation. Check [Google's model pricing](https://ai.google.dev/gemini-api/docs/pricing) before testing.
+3. Restart the app, create one artwork pubmat and one video, and inspect **AI usage & account activity**. The studio records provider-reported token counts per call; a provider that supplies no token usage appears as **unavailable**. The creation source identifies whether video came from Gemini or local rendering.
 
-AI generation requires an API account with billing and model access. The editable template pubmat and uploads can still be used without an OpenAI key.
+To add OpenAI as a fallback, create a key in the [OpenAI API dashboard](https://platform.openai.com/api-keys) and set `OPENAI_API_KEY`. When Gemini caption or artwork fails, the studio can try OpenAI. If you later want OpenAI first, set `AI_PROVIDER=openai`; Gemini then becomes the fallback. Never paste either key into the browser or chat. The editable template pubmat and uploads work without an AI key.
 
 ## Host media for Meta
 
@@ -24,7 +24,7 @@ Instagram fetches media from a public HTTPS URL. A local `localhost` URL is usef
 
 Keep the API secret on the server. The app uploads media to Cloudinary before a live publish request.
 
-If people outside your computer need to open the demo product link, set a strong `STUDIO_PASSWORD` in `.env.local`, expose `http://127.0.0.1:3000` through a temporary public HTTPS tunnel, and set `APP_URL` to that tunnel URL. The browser will ask for `STUDIO_USERNAME` and `STUDIO_PASSWORD` before opening the studio; the product page remains public. Keep `GOOGLE_REDIRECT_URI` at the exact URL registered in Google Cloud. A tunnel is optional for a local presentation.
+If people outside your computer need to open the demo product link, set a strong `STUDIO_PASSWORD` in `.env.local`, expose `http://localhost:8000` through a temporary public HTTPS tunnel, and set `APP_URL` to that tunnel URL. The browser will ask for `STUDIO_USERNAME` and `STUDIO_PASSWORD` before opening the studio; the product page remains public. Keep `GOOGLE_REDIRECT_URI` at the exact URL registered in Google Cloud. A tunnel is optional for a local presentation.
 
 ## Connect a Facebook Page and Instagram account
 

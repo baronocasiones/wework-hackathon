@@ -30,7 +30,7 @@ export async function storeLocalMedia(file: File, resourceType: "image" | "video
   const extension = resourceType === "video" ? ".mp4" : ({ "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" } as Record<string, string>)[file.type] ?? ".png";
   const filename = `${randomUUID()}${extension}`;
   await writeFile(path.join(directory, filename), Buffer.from(await file.arrayBuffer()));
-  const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const baseUrl = process.env.APP_URL ?? "http://localhost:8000";
   return new URL(`/api/media/${filename}`, baseUrl).toString();
 }
 

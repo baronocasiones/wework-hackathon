@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, CalendarClock, Check, ChevronDown, CircleHelp, Clock3, CloudUpload, ImagePlus, Instagram, LoaderCircle, Megaphone, MonitorPlay, MoreHorizontal, Plus, Send, Settings2, Sparkles, Video, Youtube } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, CalendarClock, Check, ChevronDown, CircleHelp, Clock3, CloudUpload, ImagePlus, Instagram, LoaderCircle, Maximize2, Megaphone, MonitorPlay, MoreHorizontal, Plus, Send, Settings2, Sparkles, Video, X, Youtube } from "lucide-react";
 
 type Platform = "facebook" | "instagram" | "youtube";
-type Content = { id: string; title: string; kind: "image" | "video"; source: string; media_url: string; caption: string; created_at: string; template_headline: string | null; template_body: string | null };
+type Content = { id: string; title: string; kind: "image" | "video"; source: string; media_url: string; caption: string; subtitle: string; created_at: string; template_headline: string | null; template_body: string | null };
 type Job = { id: string; platform: Platform; title: string; kind: "image" | "video"; caption: string; scheduled_at: string; status: string; provider_id: string | null; permalink: string | null; error: string | null; media_url: string };
 type Metric = { platform: Platform; label: string; views: number; likes: number; comments: number; engagement: number; source: "live" | "demo"; postCount: number; sales: number; revenue: number };
-type Dashboard = { metrics: Metric[]; jobs: Job[]; usage: Array<{ run_id: string; calls: number; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number }>; aiCalls: Array<{ id: string; operation: string; model: string; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number; outcome: string; created_at: string }>; credentialEvents: Array<{ id: string; platform: string; event: string; expires_at: string | null; outcome: string; detail: string; created_at: string }>; configured: { openAi: boolean; cloudinary: boolean; meta: boolean; google: boolean; publicLinks: boolean } };
+type Dashboard = { metrics: Metric[]; jobs: Job[]; usage: Array<{ run_id: string; calls: number; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number }>; aiCalls: Array<{ id: string; operation: string; model: string; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number; outcome: string; created_at: string }>; credentialEvents: Array<{ id: string; platform: string; event: string; expires_at: string | null; outcome: string; detail: string; created_at: string }>; configured: { gemini: boolean; openAi: boolean; cloudinary: boolean; meta: boolean; google: boolean; publicLinks: boolean } };
 
 const platforms: Array<{ id: Platform; name: string; icon: typeof Instagram }> = [
   { id: "facebook", name: "Facebook", icon: Megaphone },
@@ -17,6 +17,7 @@ const platforms: Array<{ id: Platform; name: string; icon: typeof Instagram }> =
 const money = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 
 export default function Home() {
+  const previewRef = useRef<HTMLDialogElement>(null);
   const [assets, setAssets] = useState<Content[]>([]);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [selected, setSelected] = useState<string>("");
@@ -24,26 +25,31 @@ export default function Home() {
   const [captions, setCaptions] = useState<Record<string, string>>({});
   const [schedule, setSchedule] = useState("");
   const [idea, setIdea] = useState("");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftCaption, setDraftCaption] = useState("");
+  const [draftSubtitle, setDraftSubtitle] = useState("");
   const [headline, setHeadline] = useState("A little something for you");
   const [templateBody, setTemplateBody] = useState("");
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadCaption, setUploadCaption] = useState("");
+  const [uploadSubtitle, setUploadSubtitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [showSettings, setShowSettings] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredId?: string) => {
     const [contentResponse, dashboardResponse] = await Promise.all([fetch("/api/content"), fetch("/api/dashboard")]);
     if (contentResponse.ok) {
       const list = await contentResponse.json() as Content[];
       setAssets(list);
-      if (!selected && list[0]) {
-        setSelected(list[0].id);
-        const defaults: Platform[] = list[0].kind === "video" ? ["facebook", "instagram", "youtube"] : ["facebook", "instagram"];
+      const chosen = preferredId ? list.find((asset) => asset.id === preferredId) : !selected ? list[0] : undefined;
+      if (chosen) {
+        setSelected(chosen.id);
+        const defaults: Platform[] = chosen.kind === "video" ? ["facebook", "instagram", "youtube"] : ["facebook", "instagram"];
         setTargets(defaults);
-        setCaptions(Object.fromEntries(defaults.map((platform) => [platform, list[0].caption])));
-        setHeadline(list[0].template_headline ?? "A little something for you");
-        setTemplateBody(list[0].template_body ?? list[0].caption);
+        setCaptions(Object.fromEntries(defaults.map((platform) => [platform, chosen.caption])));
+        setHeadline(chosen.template_headline ?? chosen.title);
+        setTemplateBody(chosen.template_body ?? chosen.subtitle);
       }
     }
     if (dashboardResponse.ok) setDashboard(await dashboardResponse.json() as Dashboard);
@@ -58,10 +64,12 @@ export default function Home() {
   async function runGenerate(kind: "template" | "artwork" | "video") {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, prompt: idea, headline, body: templateBody || idea }) });
+      const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, prompt: idea, title: draftTitle, caption: draftCaption, subtitle: draftSubtitle }) });
       const body = await response.json() as { id?: string; error?: string };
       if (!response.ok || !body.id) throw new Error(body.error ?? "Could not create content.");
-      await load(); setSelected(body.id); setMessage("Your content is ready to edit."); setIdea("");
+      await load(body.id); setMessage("Your content is ready to edit."); setIdea("");
+      setDraftTitle(""); setDraftCaption(""); setDraftSubtitle("");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not create content."); }
     finally { setBusy(false); }
   }
@@ -71,23 +79,26 @@ export default function Home() {
     if (!file) return;
     setBusy(true); setMessage("");
     try {
-      const form = new FormData(); form.set("file", file); form.set("title", uploadTitle || file.name.replace(/\.[^.]+$/, "")); form.set("caption", uploadCaption);
+      const form = new FormData(); form.set("file", file); form.set("context", idea); form.set("title", uploadTitle);
+      form.set("caption", uploadCaption); form.set("subtitle", uploadSubtitle);
       const response = await fetch("/api/content", { method: "POST", body: form });
       const body = await response.json() as { id?: string; error?: string };
       if (!response.ok || !body.id) throw new Error(body.error ?? "Could not upload this file.");
-      await load(); setSelected(body.id); setUploadTitle(""); setUploadCaption(""); setMessage("Upload is ready to edit."); event.target.value = "";
+      await load(body.id); setUploadTitle(""); setUploadCaption(""); setUploadSubtitle("");
+      setMessage("Upload is ready to edit."); event.target.value = "";
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not upload this file."); }
     finally { setBusy(false); }
   }
 
   function setContent(nextId: string) {
+    previewRef.current?.close();
     setSelected(nextId);
     const asset = assets.find((item) => item.id === nextId);
     const defaults = asset?.kind === "video" ? ["facebook", "instagram", "youtube"] as Platform[] : ["facebook", "instagram"] as Platform[];
     setTargets(defaults);
     setCaptions(Object.fromEntries(defaults.map((platform) => [platform, asset?.caption ?? ""])));
-    setHeadline(asset?.template_headline ?? "A little something for you");
-    setTemplateBody(asset?.template_body ?? asset?.caption ?? "");
+    setHeadline(asset?.template_headline ?? asset?.title ?? "");
+    setTemplateBody(asset?.template_body ?? asset?.subtitle ?? "");
   }
 
   async function saveTemplate() {
@@ -137,7 +148,7 @@ export default function Home() {
         <div className="account-row"><span className="account-dot ig"><Instagram size={13}/></span>Instagram{dashboard?.configured.meta ? <span className="needs-setup">Configured</span> : <span className="needs-setup">Set up</span>}</div>
         <div className="account-row"><span className="account-dot yt"><Youtube size={14}/></span>YouTube{dashboard?.configured.google ? <span className="needs-setup">Configured</span> : <span className="needs-setup">Set up</span>}</div>
         <button className="settings-link" onClick={() => setShowSettings(!showSettings)}><Settings2 size={16}/> Settings & connections</button>
-        {showSettings && <div className="settings-card"><p>Connect YouTube with Google OAuth. Meta and media hosting use server-side settings.</p><a href="/api/oauth/google/start" className="small-button">Connect YouTube</a><a href="/setup" className="setup-link">View setup guide ↗</a></div>}
+        {showSettings && <div className="settings-card"><p>Gemini {dashboard?.configured.gemini ? "ready" : "not added"} · OpenAI {dashboard?.configured.openAi ? "ready" : "not added"}. Connect YouTube with Google OAuth. Meta and media hosting use server-side settings.</p><a href="/api/oauth/google/start" className="small-button">Connect YouTube</a><a href="/setup" className="setup-link">View setup guide ↗</a></div>}
         <button className="help-link"><CircleHelp size={16}/> Help center</button>
       </div>
     </aside>
@@ -158,14 +169,17 @@ export default function Home() {
             <div className="card-heading"><div><div className="eyebrow">CONTENT WORKSHOP</div><h2>Start with an idea</h2></div><span className="step-pill">01 <span>CREATE</span></span></div>
             <label className="field-label" htmlFor="idea">What are you sharing today?</label>
             <textarea id="idea" className="idea-input" value={idea} onChange={(event) => setIdea(event.target.value)} placeholder="A new collection, a weekend offer, a moment from behind the scenes…" rows={3}/>
+            <div className="field-label copy-label">Optional post text <span>Blank fields get suggestions</span></div>
+            <div className="upload-fields copy-fields"><input aria-label="Generated content title" maxLength={120} placeholder="Title" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/><input aria-label="Generated content caption" maxLength={2200} placeholder="Caption" value={draftCaption} onChange={(event) => setDraftCaption(event.target.value)}/><input aria-label="Generated content subtitle" maxLength={100} placeholder="Subtitle or on-media line" value={draftSubtitle} onChange={(event) => setDraftSubtitle(event.target.value)}/></div>
             <div className="create-options">
               <button disabled={busy || !idea.trim()} className="option-button template-option" onClick={() => void runGenerate("template")}><span className="option-icon"><ImagePlus size={18}/></span><span><b>Template pubmat</b><small>Editable text layout · PNG</small></span><ArrowDownRight size={15}/></button>
-              <button disabled={busy || !idea.trim() || !dashboard?.configured.openAi} className="option-button" onClick={() => void runGenerate("artwork")}><span className="option-icon art-icon"><Sparkles size={18}/></span><span><b>AI artwork pubmat</b><small>Generated art + caption</small></span><ArrowDownRight size={15}/></button>
-              <button disabled={busy || !idea.trim() || !dashboard?.configured.openAi} className="option-button" onClick={() => void runGenerate("video")}><span className="option-icon video-icon"><Video size={18}/></span><span><b>15-sec vertical video</b><small>Artwork + animated copy</small></span><ArrowDownRight size={15}/></button>
+              <button disabled={busy || !idea.trim() || !(dashboard?.configured.gemini || dashboard?.configured.openAi)} className="option-button" onClick={() => void runGenerate("artwork")}><span className="option-icon art-icon"><Sparkles size={18}/></span><span><b>AI artwork pubmat</b><small>Generated art + caption</small></span><ArrowDownRight size={15}/></button>
+              <button disabled={busy || !idea.trim() || !(dashboard?.configured.gemini || dashboard?.configured.openAi)} className="option-button" onClick={() => void runGenerate("video")}><span className="option-icon video-icon"><Video size={18}/></span><span><b>Vertical AI video</b><small>Gemini clip or 15-sec rendered video</small></span><ArrowDownRight size={15}/></button>
             </div>
-            {!dashboard?.configured.openAi && <div className="inline-note">Template pubmats work offline. Add an OpenAI key to create artwork and video.</div>}
+            {!(dashboard?.configured.gemini || dashboard?.configured.openAi) && <div className="inline-note">Template pubmats work offline. Add a Gemini or OpenAI key to create artwork and video.</div>}
             <div className="upload-divider"><span>OR ADD YOUR OWN</span></div>
-            <div className="upload-fields"><input aria-label="Content title" placeholder="Give this content a name" value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)}/><input aria-label="Caption" placeholder="Starting caption (optional)" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)}/></div>
+            <div className="field-label copy-label">Optional upload text <span>Suggestions use your idea or filename</span></div>
+            <div className="upload-fields copy-fields"><input aria-label="Content title" maxLength={120} placeholder="Title" value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)}/><input aria-label="Caption" maxLength={2200} placeholder="Caption" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)}/><input aria-label="Subtitle" maxLength={100} placeholder="Subtitle or on-media line" value={uploadSubtitle} onChange={(event) => setUploadSubtitle(event.target.value)}/></div>
             <label className="upload-drop"><input type="file" accept="image/*,video/*" onChange={(event) => void uploadFile(event)}/><span className="upload-icon"><CloudUpload size={19}/></span><span><b>Drop in a photo or video</b><small>PNG, JPG, MP4 up to 200 MB</small></span><span className="button button-outline">Browse files</span></label>
             {busy && <div className="busy-line"><LoaderCircle size={15} className="spin"/> Working on it…</div>}
             {message && <div className="toast-message">{message}</div>}
@@ -173,7 +187,7 @@ export default function Home() {
 
           <section className="card planner-card">
             <div className="card-heading"><div><div className="eyebrow">YOUR NEXT POST</div><h2>Make it yours</h2></div><span className="step-pill">02 <span>PLAN</span></span></div>
-            {current ? <><div className="selected-content"><div className="preview-thumb">{current.kind === "video" ? <video src={current.media_url} muted/> : <img src={current.media_url} alt="Selected content preview"/>}<span className="media-type">{current.kind === "video" ? <Video size={12}/> : <ImagePlus size={12}/>} {current.kind}</span></div><div className="selected-info"><b>{current.title}</b><small>{current.source.replaceAll("_", " ")} · Added {new Date(current.created_at).toLocaleDateString()}</small><button className="text-button" onClick={() => document.getElementById("asset-picker")?.click()}>Choose different content</button><select id="asset-picker" aria-label="Choose content" value={selected} onChange={(event) => setContent(event.target.value)}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div></div>
+            {current ? <><div className="selected-content"><button type="button" className="preview-thumb" onClick={() => previewRef.current?.showModal()} aria-label={`View preview of ${current.title}`}>{current.kind === "video" ? <video src={current.media_url} muted preload="metadata"/> : <img src={current.media_url} alt=""/>}<span className="media-type">{current.kind === "video" ? <Video size={12}/> : <ImagePlus size={12}/>} {current.kind}</span><span className="preview-expand"><Maximize2 size={13}/></span></button><div className="selected-info"><button type="button" className="preview-title" onClick={() => previewRef.current?.showModal()}>{current.title}</button><small>{current.subtitle || "No subtitle"}</small><small>{current.source.replaceAll("_", " ")} · Added {new Date(current.created_at).toLocaleDateString()}</small><button className="text-button" onClick={() => document.getElementById("asset-picker")?.click()}>Choose different content</button><select id="asset-picker" aria-label="Choose content" value={selected} onChange={(event) => setContent(event.target.value)}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div></div>
                 {current.source === "template" && <div className="template-editor"><div className="field-label">Edit pubmat text <span>Changes the image layout</span></div><input maxLength={70} value={headline} onChange={(event) => setHeadline(event.target.value)} aria-label="Pubmat headline"/><textarea maxLength={100} rows={2} value={templateBody} onChange={(event) => setTemplateBody(event.target.value)} aria-label="Pubmat supporting text"/><button className="text-button" onClick={() => void saveTemplate()} disabled={busy}>Update pubmat</button></div>}
                 <div className="field-label platform-label">Where should it go?</div><div className="platform-pills">{availablePlatforms.map(({ id, name, icon: Icon }) => <button key={id} className={`platform-pill ${targets.includes(id) ? "platform-selected" : ""}`} onClick={() => toggleTarget(id)}><Icon size={15}/>{name}{targets.includes(id) && <Check size={13}/>}</button>)}</div>
                 {targets.length > 0 && <div className="tracked-links">{targets.map((platform) => <a key={platform} href={`/product?platform=${platform}&campaign=${encodeURIComponent(current.id)}`} target="_blank" rel="noreferrer">Preview {platforms.find((item) => item.id === platform)?.name} product link ↗</a>)}</div>}
@@ -195,6 +209,9 @@ export default function Home() {
         <footer className="footer-row"><span>Made for the moments that move people.</span><span>AI usage and connection activity are recorded on this device.</span></footer>
       </div>
     </section>
+    <dialog ref={previewRef} className="media-preview-dialog" aria-label={current ? `Preview of ${current.title}` : "Content preview"} onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }} onClose={() => previewRef.current?.querySelector("video")?.pause()}>
+      {current && <div className="media-preview-panel"><div className="media-preview-header"><div><span className="eyebrow">CONTENT PREVIEW</span><h2>{current.title}</h2></div><button type="button" className="media-preview-close" onClick={() => previewRef.current?.close()} aria-label="Close preview"><X size={20}/></button></div><div className="media-preview-frame">{current.kind === "video" ? <video key={current.id} src={current.media_url} controls playsInline preload="metadata"/> : <img key={current.id} src={current.media_url} alt={current.title}/>}</div>{current.subtitle && <p className="media-preview-subtitle">{current.subtitle}</p>}{current.caption && <p className="media-preview-caption">{current.caption}</p>}</div>}
+    </dialog>
   </main>;
 }
 

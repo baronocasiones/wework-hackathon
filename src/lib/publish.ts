@@ -161,7 +161,7 @@ export async function googleAccessToken(): Promise<string> {
 
 function assertLiveMediaUrl(url: string): void {
   if (!url.startsWith("https://res.cloudinary.com/")) throw new Error("Connect Cloudinary and upload public HTTPS media before live publishing. This local file remains preview-only.");
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = process.env.APP_URL ?? "http://localhost:8000";
   if (!appUrl.startsWith("https://") || /localhost|127\.0\.0\.1/i.test(appUrl)) throw new Error("Set APP_URL to a public HTTPS address before live publishing. Product tracking links are local-only right now.");
 }
 

@@ -16,7 +16,7 @@ export function db(): DatabaseSync {
     CREATE TABLE IF NOT EXISTS content (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('image','video')),
       source TEXT NOT NULL, media_url TEXT NOT NULL, thumbnail_url TEXT, caption TEXT NOT NULL,
-      created_at TEXT NOT NULL, template_headline TEXT, template_body TEXT
+      created_at TEXT NOT NULL, template_headline TEXT, template_body TEXT, subtitle TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS publish_jobs (
       id TEXT PRIMARY KEY, content_id TEXT NOT NULL REFERENCES content(id), platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram','youtube')),
@@ -58,6 +58,7 @@ export function db(): DatabaseSync {
   const contentColumns = connection.prepare("PRAGMA table_info(content)").all();
   if (!contentColumns.some((column) => column.name === "template_headline")) connection.exec("ALTER TABLE content ADD COLUMN template_headline TEXT");
   if (!contentColumns.some((column) => column.name === "template_body")) connection.exec("ALTER TABLE content ADD COLUMN template_body TEXT");
+  if (!contentColumns.some((column) => column.name === "subtitle")) connection.exec("ALTER TABLE content ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''");
   globalThis.postHouseDatabase = connection;
   return connection;
 }

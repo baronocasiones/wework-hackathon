@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 127.0.0.1",
+    "dev": "next dev -H localhost -p 8000",
     "build": "next build",
-    "start": "next start -H 127.0.0.1",
-    "worker": "node --import tsx src/worker/index.ts",
+    "start": "next start -H localhost -p 8000",
+    "worker": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/worker/index.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

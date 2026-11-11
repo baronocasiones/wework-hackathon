@@ -12,12 +12,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Keep the headline under 70 characters and supporting text under 100.");
-  const existing = db().prepare("SELECT id,title,source,kind FROM content WHERE id=?").get(id) as { id: string; title: string; source: string; kind: string } | undefined;
+  const existing = db().prepare("SELECT id,title,caption,source,kind FROM content WHERE id=?").get(id) as { id: string; title: string; caption: string; source: string; kind: string } | undefined;
   if (!existing || existing.source !== "template" || existing.kind !== "image") return jsonError("Only template pubmats can be edited here.", 404);
   try {
-    const asset = await createGeneratedAsset({ kind: "template", prompt: existing.title, headline: parsed.data.headline, body: parsed.data.body });
-    db().prepare("UPDATE content SET media_url=?,template_headline=?,template_body=?,caption=?,created_at=? WHERE id=?")
-      .run(asset.mediaUrl, parsed.data.headline, parsed.data.body, parsed.data.body, nowIso(), id);
+    const asset = await createGeneratedAsset({ kind: "template", prompt: existing.title, title: parsed.data.headline,
+      caption: existing.caption, subtitle: parsed.data.body });
+    db().prepare("UPDATE content SET title=?,media_url=?,template_headline=?,template_body=?,subtitle=?,created_at=? WHERE id=?")
+      .run(parsed.data.headline, asset.mediaUrl, parsed.data.headline, parsed.data.body, parsed.data.body, nowIso(), id);
     return Response.json({ id, mediaUrl: asset.mediaUrl });
   } catch (error) { return jsonError(error instanceof Error ? error.message : "Could not update this pubmat.", 500); }
 }

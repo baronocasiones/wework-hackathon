@@ -9,13 +9,15 @@ A single-operator demo for making social content, preparing platform-specific po
 3. Run `npm install`.
 4. Run `npm run dev` in one terminal.
 5. Run `npm run worker` in a second terminal. The worker checks the SQLite schedule every five seconds.
-6. Open `http://localhost:3000`.
+6. Open `http://localhost:8000`.
 
-The app scripts bind to `127.0.0.1` so the local demo is not reachable directly from the LAN. Point any HTTPS tunnel at `http://127.0.0.1:3000`.
+The app scripts bind to `localhost` on port 8000 so the local demo is not reachable directly from the LAN. Point any HTTPS tunnel at `http://localhost:8000`.
 
-The app stores SQLite data under `./data/studio.sqlite` and local preview files under `./public/uploads`. Local preview URLs cannot be fetched by social networks. Live posts require signed Cloudinary uploads and a public HTTPS `APP_URL`; use a temporary HTTPS tunnel for the demo product page and set `APP_URL` to that tunnel address. `GOOGLE_REDIRECT_URI` can remain `http://localhost:3000/api/oauth/google/callback` for local OAuth. Before opening a public tunnel, set a strong `STUDIO_PASSWORD` in `.env.local`. The browser asks for the operator username and password before opening the studio or its privileged APIs. The product page, demo checkout, and uploaded media stay public. The app refuses public access to privileged routes if the password is blank.
+The app stores SQLite data under `./data/studio.sqlite` and local preview files under `./public/uploads`. Local preview URLs cannot be fetched by social networks. Live posts require signed Cloudinary uploads and a public HTTPS `APP_URL`; use a temporary HTTPS tunnel for the demo product page and set `APP_URL` to that tunnel address. `GOOGLE_REDIRECT_URI` can remain `http://localhost:8000/api/oauth/google/callback` for local OAuth. Before opening a public tunnel, set a strong `STUDIO_PASSWORD` in `.env.local`. The browser asks for the operator username and password before opening the studio or its privileged APIs. The product page, demo checkout, and uploaded media stay public. The app refuses public access to privileged routes if the password is blank.
 
 See `/setup` in the app for a short credential checklist. The operator should also use the separate `SETUP.md` for full account configuration steps.
+
+For AI testing, set `GEMINI_API_KEY` in `.env.local` and leave `AI_PROVIDER=gemini`. Gemini supplies captions and artwork. The video button first tries a native Gemini clip; if the model is unavailable, it renders a 15-second video from Gemini artwork locally. Gemini captions can use the free API tier, while Gemini image and native video generation require paid API access ([pricing](https://ai.google.dev/gemini-api/docs/pricing)). An optional `OPENAI_API_KEY` provides another fallback, and `AI_PROVIDER=openai` reverses the provider preference.
 
 ## What the app records
 
@@ -35,4 +37,4 @@ See `/setup` in the app for a short credential checklist. The operator should al
 
 ## Limitations
 
-Live publishing was not verified without the team's Meta, Google, OpenAI, and Cloudinary credentials. Instagram Reels may take up to 54 seconds to reach a ready container state. Facebook Reel requirements and platform account eligibility still apply. For the Instagram demo sale, open the platform-specific preview link in the studio or copy the tracked link into a channel that supports it. The worker and app must remain running for local scheduled posts.
+Live publishing was not verified without the team's Meta, Google, and Cloudinary credentials. Gemini and OpenAI generation require their respective keys and model access. Instagram Reels may take up to 54 seconds to reach a ready container state. Facebook Reel requirements and platform account eligibility still apply. For the Instagram demo sale, open the platform-specific preview link in the studio or copy the tracked link into a channel that supports it. The worker and app must remain running for local scheduled posts.

@@ -27,7 +27,7 @@ export async function POST(request: Request): Promise<Response> {
     const jobs = targets.map((platform) => {
       const id = randomUUID();
       const caption = captions[platform]?.trim() || content.caption;
-      insert.run(id, contentId, platform, allowedPlatformCaption(caption, platform, contentId, process.env.APP_URL ?? "http://localhost:3000"), time, nowIso(), nowIso());
+      insert.run(id, contentId, platform, allowedPlatformCaption(caption, platform, contentId, process.env.APP_URL ?? "http://localhost:8000"), time, nowIso(), nowIso());
       return { id, platform, scheduledAt: time, status: "queued" };
     });
     database.exec("COMMIT");
