@@ -62,7 +62,7 @@ test("Cloudflare artwork is selected in the generated asset and records unavaila
   const calls = db().prepare("SELECT model,operation,input_tokens,output_tokens,total_tokens,outcome FROM ai_calls WHERE run_id=? ORDER BY created_at").all(asset.runId);
   assert.deepEqual(calls.map((call) => ({ ...call })), [
     { model: "@cf/black-forest-labs/flux-1-schnell", operation: "artwork", input_tokens: null, output_tokens: null, total_tokens: null, outcome: "success" },
-    { model: "gemini-2.0-flash", operation: "critique", input_tokens: null, output_tokens: null, total_tokens: null, outcome: "failed" },
+    { model: "gemini-3.1-flash-lite", operation: "critique", input_tokens: null, output_tokens: null, total_tokens: null, outcome: "failed" },
   ]);
 }));
 
