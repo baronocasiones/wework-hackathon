@@ -1,4 +1,8 @@
 import { setTimeout } from "node:timers/promises";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 import { z } from "zod";
 import { recordAiCall } from "@/lib/monitoring";
 
@@ -138,5 +142,49 @@ export async function falVideo(prompt: string, runId: string): Promise<{ bytes: 
     throw new Error(`fal video is still processing (request ${submitted.data.request_id}). Check fal dashboard before starting another billed generation.`);
   } finally {
     recordAiCall({ runId, operation: "video", model: MODEL, durationMs: Date.now() - started, outcome });
+  }
+}
+
+export function probeVideo(bytes: Buffer): { hasAudio: boolean; hasVideo: boolean } {
+  const result = spawnSync(process.env.FFPROBE_PATH ?? "ffprobe", ["-v", "error", "-show_entries", "stream=codec_type", "-of", "json", "pipe:0"], { input: bytes, maxBuffer: 10 * 1024 * 1024 });
+  if (result.status !== 0) return { hasAudio: false, hasVideo: false };
+  try {
+    const parsed = JSON.parse(result.stdout.toString());
+    const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+    return {
+      hasAudio: streams.some((s: { codec_type?: string }) => s.codec_type === "audio"),
+      hasVideo: streams.some((s: { codec_type?: string }) => s.codec_type === "video"),
+    };
+  } catch {
+    return { hasAudio: false, hasVideo: false };
+  }
+}
+
+function runFfmpegAsync(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.env.FFMPEG_PATH ?? "ffmpeg", args, { stdio: "ignore" });
+    child.once("error", reject);
+    child.once("exit", (code) => (code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${String(code)}.`))));
+  });
+}
+
+export async function muxAmbientAudio(videoBytes: Buffer, trackPath: string): Promise<Buffer> {
+  const directory = mkdtempSync(path.join(tmpdir(), "post-house-mux-"));
+  const videoPath = path.join(directory, "in.mp4");
+  const audioPath = path.resolve(trackPath);
+  const outPath = path.join(directory, "out.mp4");
+  try {
+    writeFileSync(videoPath, videoBytes);
+    const probe = spawnSync(process.env.FFPROBE_PATH ?? "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", videoPath]);
+    const duration = Number(probe.stdout.toString().trim()) || 5;
+    const fadeStart = Math.max(0, duration - 2);
+    await runFfmpegAsync([
+      "-y", "-stream_loop", "-1", "-i", audioPath, "-i", videoPath,
+      "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+      "-af", `afade=t=out:st=${fadeStart}:d=2`, "-map", "0:a", "-map", "1:v", outPath,
+    ]);
+    return readFileSync(outPath);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 }
