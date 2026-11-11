@@ -7,9 +7,11 @@ import { wrapText } from "@/lib/domain";
 import { recordAiCall } from "@/lib/monitoring";
 import { uploadLocalFile } from "@/lib/media";
 import { geminiCaption, geminiImage, geminiText, geminiVideo } from "@/lib/gemini";
+import { cloudflareImage } from "@/lib/cloudflare";
 
 type AiProvider = "gemini" | "openai";
-type GeneratedImage = { bytes: Buffer; mimeType: string; provider: AiProvider };
+type ImageProvider = AiProvider | "cloudflare";
+type GeneratedImage = { bytes: Buffer; mimeType: string; provider: ImageProvider };
 
 function providerOrder(): AiProvider[] {
   const preferred: AiProvider = process.env.AI_PROVIDER === "openai" ? "openai" : "gemini";
@@ -18,6 +20,16 @@ function providerOrder(): AiProvider[] {
   if (process.env.OPENAI_API_KEY) configured.push("openai");
   if (!configured.length) throw new Error("Add GEMINI_API_KEY or OPENAI_API_KEY to .env.local to generate AI content.");
   return configured.sort((left, right) => Number(right === preferred) - Number(left === preferred));
+}
+
+function imageProviderOrder(): ImageProvider[] {
+  const providers: ImageProvider[] = [];
+  if (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) providers.push("cloudflare");
+  if (process.env.GEMINI_API_KEY) providers.push("gemini");
+  if (process.env.OPENAI_API_KEY) providers.push("openai");
+  if (!providers.length) throw new Error("Add Cloudflare, Gemini, or OpenAI credentials to generate artwork.");
+  if (!providers.includes("cloudflare") && process.env.AI_PROVIDER === "openai") providers.reverse();
+  return providers;
 }
 
 type OpenAiResponse = {
@@ -128,7 +140,8 @@ async function openAiArtwork(prompt: string, runId: string): Promise<Buffer> {
   return Buffer.from(encoded, "base64");
 }
 
-async function imageFromProvider(provider: AiProvider, prompt: string, runId: string): Promise<GeneratedImage> {
+async function imageFromProvider(provider: ImageProvider, prompt: string, runId: string): Promise<GeneratedImage> {
+  if (provider === "cloudflare") return { ...await cloudflareImage(prompt, runId), provider };
   if (provider === "gemini") {
     const result = await geminiImage(prompt, runId);
     return { ...result, provider };
@@ -137,10 +150,13 @@ async function imageFromProvider(provider: AiProvider, prompt: string, runId: st
 }
 
 async function generateArtwork(prompt: string, runId: string): Promise<GeneratedImage> {
-  for (const provider of providerOrder()) {
+  const providers = imageProviderOrder();
+  let failure: unknown;
+  for (const provider of providers) {
     try { return await imageFromProvider(provider, prompt, runId); }
-    catch { /* Try the next configured provider. Each attempt is recorded separately. */ }
+    catch (error) { failure = error; }
   }
+  if (providers.length === 1 && failure instanceof Error) throw failure;
   throw new Error("Artwork generation failed with every configured AI provider. Check the AI usage log and model access.");
 }
 
@@ -180,24 +196,19 @@ async function renderVideo(image: GeneratedImage, subtitle: string): Promise<str
 
 type VideoPlan =
   | { kind: "native"; bytes: Buffer; source: "gemini_native_video" }
-  | { kind: "rendered"; image: GeneratedImage; source: "gemini_rendered_video" | "openai_rendered_video" };
+  | { kind: "rendered"; image: GeneratedImage; source: "cloudflare_rendered_video" | "gemini_rendered_video" | "openai_rendered_video" };
 
 async function generateVideoPlan(prompt: string, runId: string): Promise<VideoPlan> {
-  for (const provider of providerOrder()) {
-    if (provider === "gemini") {
-      try {
-        const video = await geminiVideo(prompt, runId);
-        return { kind: "native", bytes: video.bytes, source: "gemini_native_video" };
-      } catch {
-        try {
-          const image = await imageFromProvider("gemini", prompt, runId);
-          return { kind: "rendered", image, source: "gemini_rendered_video" };
-        } catch { continue; }
-      }
-    }
+  if (process.env.GEMINI_API_KEY && !process.env.CLOUDFLARE_ACCOUNT_ID) {
     try {
-      const image = await imageFromProvider("openai", prompt, runId);
-      return { kind: "rendered", image, source: "openai_rendered_video" };
+      const video = await geminiVideo(prompt, runId);
+      return { kind: "native", bytes: video.bytes, source: "gemini_native_video" };
+    } catch { /* Render from artwork when native video is unavailable. */ }
+  }
+  for (const provider of imageProviderOrder()) {
+    try {
+      const image = await imageFromProvider(provider, prompt, runId);
+      return { kind: "rendered", image, source: `${provider}_rendered_video` };
     } catch { continue; }
   }
   throw new Error("Video generation failed with every configured AI provider. Check the AI usage log and model access.");

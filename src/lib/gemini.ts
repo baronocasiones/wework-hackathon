@@ -70,7 +70,17 @@ async function requestJson(url: string, apiKey: string, init: RequestInit, opera
   } catch {
     throw new Error(`Gemini ${operation} could not reach the API.`);
   }
-  if (!response.ok) throw new Error(`Gemini ${operation} failed with status ${response.status}.`);
+  if (!response.ok) {
+    if (operation === "artwork" && response.status === 429) {
+      const parsed = z.object({ error: z.object({ message: z.string().optional() }).optional() })
+        .safeParse(await response.json().catch(() => null));
+      const message = parsed.success ? parsed.data.error?.message : undefined;
+      if (message && /free_tier[^\n]*limit:\s*0/i.test(message)) {
+        throw new Error("Gemini artwork requires a paid Gemini API tier for this key. Enable billing or set OPENAI_API_KEY for fallback.");
+      }
+    }
+    throw new Error(`Gemini ${operation} failed with status ${response.status}.`);
+  }
   try {
     return await response.json();
   } catch {

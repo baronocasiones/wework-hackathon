@@ -9,7 +9,7 @@ import { db } from "../src/lib/db";
 import { POST as uploadContent } from "../app/api/content/route";
 import { POST as generateContent } from "../app/api/generate/route";
 
-const envKeys = ["AI_PROVIDER", "GEMINI_API_KEY", "OPENAI_API_KEY", "DATABASE_PATH", "UPLOAD_DIR", "APP_URL",
+const envKeys = ["AI_PROVIDER", "GEMINI_API_KEY", "OPENAI_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "DATABASE_PATH", "UPLOAD_DIR", "APP_URL",
   "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const;
 
 async function fixture(run: (png: Buffer, directory: string) => Promise<void>): Promise<void> {
@@ -24,6 +24,8 @@ async function fixture(run: (png: Buffer, directory: string) => Promise<void>): 
   process.env.UPLOAD_DIR = directory;
   process.env.APP_URL = "http://localhost:8000";
   for (const name of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) delete process.env[name];
+  delete process.env.CLOUDFLARE_ACCOUNT_ID;
+  delete process.env.CLOUDFLARE_API_TOKEN;
   try {
     await run(readFileSync(fixturePath), directory);
   } finally {
@@ -38,6 +40,47 @@ async function fixture(run: (png: Buffer, directory: string) => Promise<void>): 
     rmSync(directory, { recursive: true, force: true });
   }
 }
+
+test("Cloudflare artwork is selected in the generated asset and records unavailable usage", async () => fixture(async (_png, directory) => {
+  process.env.CLOUDFLARE_ACCOUNT_ID = "test-account";
+  process.env.CLOUDFLARE_API_TOKEN = "test-token";
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  const jpegPath = path.join(directory, "fixture.jpg");
+  const image = spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x64:d=1", "-frames:v", "1", jpegPath]);
+  assert.equal(image.status, 0, image.stderr.toString());
+  globalThis.fetch = async (input, init) => {
+    assert.match(String(input), /api\.cloudflare\.com\/client\/v4\/accounts\/test-account\/ai\/run\/@cf\/black-forest-labs\/flux-1-schnell/);
+    assert.equal(JSON.parse(String(init?.body)).steps, 4);
+    return Response.json({ success: true, result: { image: readFileSync(jpegPath).toString("base64") } });
+  };
+  const asset = await createGeneratedAsset({ kind: "artwork", prompt: "A blue weekend collection" });
+  assert.equal(asset.source, "cloudflare_artwork");
+  assert.match(asset.mediaUrl, /\.png$/);
+  assert.ok(existsSync(path.join(directory, path.basename(new URL(asset.mediaUrl).pathname))));
+  const calls = db().prepare("SELECT model,operation,input_tokens,output_tokens,total_tokens,outcome FROM ai_calls WHERE run_id=?").all(asset.runId);
+  assert.deepEqual(calls.map((call) => ({ ...call })), [{ model: "@cf/black-forest-labs/flux-1-schnell", operation: "artwork",
+    input_tokens: null, output_tokens: null, total_tokens: null, outcome: "success" }]);
+}));
+
+test("a Cloudflare rejection falls back to Gemini artwork", async () => fixture(async (png) => {
+  process.env.CLOUDFLARE_ACCOUNT_ID = "test-account";
+  process.env.CLOUDFLARE_API_TOKEN = "test-token";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
+  delete process.env.OPENAI_API_KEY;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    return url.includes("api.cloudflare.com") ? Response.json({ success: false }, { status: 403 }) : geminiResponse(url, png);
+  };
+  const asset = await createGeneratedAsset({ kind: "artwork", prompt: "Weekend collection" });
+  assert.equal(asset.source, "gemini_artwork");
+  const calls = db().prepare("SELECT model,outcome FROM ai_calls WHERE run_id=? ORDER BY created_at").all(asset.runId);
+  assert.deepEqual(calls.map((call) => ({ ...call })), [
+    { model: "gemini-3.5-flash-lite", outcome: "success" },
+    { model: "@cf/black-forest-labs/flux-1-schnell", outcome: "failed" },
+    { model: "gemini-3.1-flash-image", outcome: "success" },
+  ]);
+}));
 
 function geminiResponse(url: string, png: Buffer): Response {
   if (url.includes("flash-lite:generateContent")) {
@@ -70,6 +113,31 @@ test("an OpenAI rate limit falls back to Gemini for the finished artwork", async
   assert.equal(calls.length, 4);
   assert.equal(calls.filter((call) => call.outcome === "failed").length, 2);
   assert.equal(calls.filter((call) => call.outcome === "success").length, 2);
+}));
+
+test("a zero Gemini image quota explains the paid-tier blocker without exposing provider details", async () => fixture(async (png) => {
+  process.env.AI_PROVIDER = "gemini";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
+  delete process.env.OPENAI_API_KEY;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("flash-image:generateContent")) {
+      return Response.json({ error: { code: 429, status: "RESOURCE_EXHAUSTED",
+        message: "Quota exceeded for metric: generate_content_free_tier_input_token_count, limit: 0, secret test-gemini-key" } }, { status: 429 });
+    }
+    return geminiResponse(url, png);
+  };
+  const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "artwork", prompt: "Weekend collection" }) }));
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.match(body.error, /paid Gemini API tier/);
+  assert.match(body.error, /OPENAI_API_KEY/);
+  assert.doesNotMatch(body.error, /test-gemini-key/);
+  const calls = db().prepare("SELECT operation,outcome FROM ai_calls ORDER BY created_at").all();
+  assert.deepEqual(calls.map((call) => ({ ...call })), [
+    { operation: "copy", outcome: "success" }, { operation: "artwork", outcome: "failed" },
+  ]);
 }));
 
 test("a denied Gemini video model falls back to a 15-second Gemini-artwork MP4", async () => fixture(async (png, directory) => {

@@ -17,7 +17,7 @@ The app stores SQLite data under `./data/studio.sqlite` and local preview files 
 
 See `/setup` in the app for a short credential checklist. The operator should also use the separate `SETUP.md` for full account configuration steps.
 
-For AI testing, set `GEMINI_API_KEY` in `.env.local` and leave `AI_PROVIDER=gemini`. Gemini supplies captions and artwork. The video button first tries a native Gemini clip; if the model is unavailable, it renders a 15-second video from Gemini artwork locally. Gemini captions can use the free API tier, while Gemini image and native video generation require paid API access ([pricing](https://ai.google.dev/gemini-api/docs/pricing)). An optional `OPENAI_API_KEY` provides another fallback, and `AI_PROVIDER=openai` reverses the provider preference.
+For artwork testing, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`. The studio tries [Cloudflare FLUX.1 Schnell](https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/) first for pubmat images and locally rendered video backgrounds. Gemini and OpenAI remain image fallbacks. Gemini or OpenAI can suggest text; without either key, the studio fills blank text with local defaults. Cloudflare does not produce native video or report token usage in its image response, so its usage fields show unavailable. Restart the app after changing environment values.
 
 ## What the app records
 

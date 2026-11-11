@@ -6,7 +6,9 @@ The studio works locally for content previews and demo sales without platform cr
 
 From `/home/adrian/codes/wework-hackathon`, copy `.env.example` to `.env.local`. Fill in the values as you set up each service. Keep `.env.local` out of Git. Restart both the app and the scheduling worker after changing it.
 
-## Generate with Gemini first
+## Generate artwork with Cloudflare
+
+To test Cloudflare images, create an API token with Workers AI access in the [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens). Add your account ID as `CLOUDFLARE_ACCOUNT_ID` and the token as `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`, then restart the app. Cloudflare FLUX.1 Schnell is tried first for artwork and locally rendered video backgrounds. It does not generate captions or native video. The AI usage panel shows Cloudflare image token counts as unavailable because the image response does not provide them.
 
 1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey). Add it as `GEMINI_API_KEY` in `.env.local`. Keep `AI_PROVIDER=gemini` to try Gemini before OpenAI.
 2. Leave the model defaults in `.env.example` unless your account exposes different models. Gemini text generates captions and supports a free API tier. Gemini image generation and native video generation require a paid API tier. The video button tries [Gemini Omni Flash](https://ai.google.dev/gemini-api/docs/omni) for a native vertical clip, which can be shorter than 15 seconds. If that call fails, the studio uses Gemini artwork and FFmpeg to render a 15-second vertical video; this fallback still requires paid access to Gemini image generation. Check [Google's model pricing](https://ai.google.dev/gemini-api/docs/pricing) before testing.
