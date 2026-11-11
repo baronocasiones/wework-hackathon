@@ -183,3 +183,9 @@ Add: outcome mapping (C2), timeout recovery (C1), schedule error discrimination 
 - Conventions established: `PublishOutcome` discriminated union replaces string-matched taxonomy; `PublishError` class with `PublishFailureReason`; module-level token cache (50-min TTL, 60s stale-gate); `withTimeout` pattern; baseline-gate pattern for findings.
 - Tests: 23/23 pass (added `schedule.test.ts`, `youtube-outcome.test.ts`). Typecheck + build clean.
 - No new dependencies. No new API endpoints.
+
+## Session: 2026-11-12 — Generation + retry endpoint
+
+- Added `POST /api/jobs/[id]/retry` (re-queues failed/uncertain/needs_review jobs with scheduled_at=now). Verified live against a real failed Facebook job.
+- Generation module added (see `docs/generation.md`): style system, image tuning, template fixes, audio probe/mux, runtime agent loop, cost guards.
+- Live verification passed for Gemini-backed paths, Cloudflare artwork/template, Grok video (with audio), agent loop, dashboard agent panel.

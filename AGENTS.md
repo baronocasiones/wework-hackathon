@@ -57,6 +57,7 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - **Demo readiness** — see `docs/demo-readiness.md`. Audited 2026-11-12; the listed blockers (worker `.env`, OAuth port, Gemini vars) are **stale** — corrected in `docs/architecture.md` §8 and flagged in that file's "Superseded claims" section.
 - **Architecture** — see `docs/architecture.md`. Added 2026-11-12; owns topology, module map, data model, job invariants, and integration boundaries. Answers the monolith question (modular monolith + sidecar worker) and corrects stale claims in the other docs.
 - **Pipeline (schedule → publish → worker)** — see `docs/pipeline.md`. Added 2026-11-12; owns pipeline behavior, outcome taxonomy, free-tier budget, findings (C1–M6), and implementation status. C1–C3, H1–H3, M3–M6 implemented; M1 (streaming) deferred.
+- **Generation (AI output quality)** — see `docs/generation.md`. Added 2026-11-12; style system, image tuning, template rendering fixes, video audio probe/mux, runtime agent loop, retry endpoint.
 - Everything else has no module doc yet.
 
 ## Session History
@@ -84,6 +85,15 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Implemented: outcome model (C3), fetch timeout (C1), YouTube confirmation (C2), dashboard quota fix (H1), token cache (H2), schedule error masking (H3), backlog metric (M3), graceful shutdown (M4), post-now collision handling (M5), dead code removal (M6). M1 (streaming) deferred.
 - Conventions established: `PublishOutcome` discriminated union replaces string matching; `PublishError` class with `PublishFailureReason`; module-level token cache (50-min TTL, 60s stale-gate); `withTimeout` pattern; baseline-gate pattern for findings.
 - Tests: 23/23 pass (added `schedule.test.ts`, `youtube-outcome.test.ts`). Typecheck + build clean. No new dependencies.
+
+### 2026-11-12 — Generation + agent loop + retry endpoint (live verified)
+
+- Implemented: style system (6 presets, `recommendStyle`), Cloudflare tuning (steps 4→8, model env), template rendering fixes (dynamic font size, fontfile env), video audio probe + optional ambient mux, runtime agent critique loop (Gemini vision, max 3 images/2 videos, score≥70, daily cap 50), `POST /api/jobs/[id]/retry`, dashboard agent metrics, UI style display + Retry button.
+- DB: `content.style` column + `generation_attempts` table (guarded migration).
+- New files: `src/lib/styles.ts`, `src/lib/agent-critique.ts`, `app/api/jobs/[id]/retry/route.ts`, `docs/generation.md`.
+- Conventions: agent loop enabled by default but fail-closed on daily cap; prompt injection mitigated via delimiters; style constrained to registry; audio mux default off (fal clips already contain audio).
+- Live verification: Gemini style + vision critique, Cloudflare artwork/template, Grok video (ffprobe audio present), agent loop (2 attempts, avg score 100), dashboard panel, retry re-queue — all passed. Cloudflare/fal paths exercised end-to-end.
+- Tests: 22/22 pass (updated for style/critique calls + 8 steps). Typecheck + build clean. No new dependencies.
 
 ### 2026-11-12 — Architecture documentation (modular monolith audit)
 

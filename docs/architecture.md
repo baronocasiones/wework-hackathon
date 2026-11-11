@@ -413,3 +413,4 @@ flowchart LR
 - `publish_jobs` schema unchanged; no migration needed.
 - Dashboard no longer writes `credential_events` on every poll (token cached, stats stale-gated).
 - New module doc: `docs/pipeline.md` (pipeline behavior, findings, implementation status).
+- 2026-11-12 generation update: `content` gained nullable `style TEXT` column; new `generation_attempts` table (`id, run_id, attempt, kind, score, issues, revised_prompt, accepted, created_at`) for agent-loop observability. Migration is ad-hoc guarded `ALTER TABLE` in `src/lib/db.ts`.
