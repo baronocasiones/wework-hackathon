@@ -15,7 +15,7 @@ const critiqueSchema = z.object({
 });
 
 function visionModel(): string {
-  return process.env.GEMINI_VISION_MODEL?.trim() || "gemini-2.0-flash";
+  return process.env.GEMINI_VISION_MODEL?.trim() || "gemini-3.1-flash-lite";
 }
 
 function threshold(): number {
@@ -35,6 +35,7 @@ export async function critiqueImage(imageBytes: Buffer, originalPrompt: string, 
   let outcome: "success" | "failed" = "failed";
   try {
     if (!process.env.GEMINI_API_KEY) throw new Error("Gemini not configured.");
+    const mime = imageBytes[0] === 0x89 && imageBytes[1] === 0x50 ? "image/png" : "image/jpeg";
     const base64 = imageBytes.toString("base64");
     const prompt = `You are a visual quality critic for social media images. Score the image 0-100 for visual appeal, brand fit, and text-readability readiness. Style target: ${style}. Original idea: ${originalPrompt.slice(0, 500)}.\n` +
       `Return ONLY a JSON object: {"score": number, "issues": string[], "revisedPrompt": string}. revisedPrompt should be an improved image-generation prompt addressing the issues, under 300 chars.`;
@@ -44,12 +45,12 @@ export async function critiqueImage(imageBytes: Buffer, originalPrompt: string, 
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64 } }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: mime, data: base64 } }] }],
       }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!response.ok) throw new Error(`Gemini vision failed with status ${response.status}.`);
-    const raw = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; usageMetadata?: unknown };
+    const raw = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } };
     const text = raw.candidates?.flatMap((c) => c.content?.parts ?? []).map((p) => p.text ?? "").join("").trim() ?? "";
     const first = text.indexOf("{");
     const last = text.lastIndexOf("}");
@@ -57,7 +58,7 @@ export async function critiqueImage(imageBytes: Buffer, originalPrompt: string, 
     const parsed = critiqueSchema.safeParse(JSON.parse(text.slice(first, last + 1)));
     if (!parsed.success) throw new Error("invalid critique");
     outcome = "success";
-    recordAiCall({ runId, operation: "critique", model, responseUsage: raw.usageMetadata, durationMs: Date.now() - started, outcome });
+    recordAiCall({ runId, operation: "critique", model, responseUsage: { input_tokens: raw.usageMetadata?.promptTokenCount ?? null, output_tokens: raw.usageMetadata?.candidatesTokenCount ?? null, total_tokens: raw.usageMetadata?.totalTokenCount ?? null }, durationMs: Date.now() - started, outcome });
     return parsed.data;
   } catch {
     recordAiCall({ runId, operation: "critique", model, durationMs: Date.now() - started, outcome });
