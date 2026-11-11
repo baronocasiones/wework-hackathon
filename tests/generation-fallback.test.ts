@@ -52,16 +52,18 @@ test("Cloudflare artwork is selected in the generated asset and records unavaila
   assert.equal(image.status, 0, image.stderr.toString());
   globalThis.fetch = async (input, init) => {
     assert.match(String(input), /api\.cloudflare\.com\/client\/v4\/accounts\/test-account\/ai\/run\/@cf\/black-forest-labs\/flux-1-schnell/);
-    assert.equal(JSON.parse(String(init?.body)).steps, 4);
+    assert.equal(JSON.parse(String(init?.body)).steps, 8);
     return Response.json({ success: true, result: { image: readFileSync(jpegPath).toString("base64") } });
   };
   const asset = await createGeneratedAsset({ kind: "artwork", prompt: "A blue weekend collection" });
   assert.equal(asset.source, "cloudflare_artwork");
   assert.match(asset.mediaUrl, /\.png$/);
   assert.ok(existsSync(path.join(directory, path.basename(new URL(asset.mediaUrl).pathname))));
-  const calls = db().prepare("SELECT model,operation,input_tokens,output_tokens,total_tokens,outcome FROM ai_calls WHERE run_id=?").all(asset.runId);
-  assert.deepEqual(calls.map((call) => ({ ...call })), [{ model: "@cf/black-forest-labs/flux-1-schnell", operation: "artwork",
-    input_tokens: null, output_tokens: null, total_tokens: null, outcome: "success" }]);
+  const calls = db().prepare("SELECT model,operation,input_tokens,output_tokens,total_tokens,outcome FROM ai_calls WHERE run_id=? ORDER BY created_at").all(asset.runId);
+  assert.deepEqual(calls.map((call) => ({ ...call })), [
+    { model: "@cf/black-forest-labs/flux-1-schnell", operation: "artwork", input_tokens: null, output_tokens: null, total_tokens: null, outcome: "success" },
+    { model: "gemini-2.0-flash", operation: "critique", input_tokens: null, output_tokens: null, total_tokens: null, outcome: "failed" },
+  ]);
 }));
 
 test("a Cloudflare rejection does not generate artwork through Gemini or OpenAI", async () => fixture(async () => {
@@ -79,12 +81,12 @@ test("a Cloudflare rejection does not generate artwork through Gemini or OpenAI"
       title: "Weekend collection", caption: "Browse the collection.", subtitle: "Fresh picks" }) }));
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /Cloudflare artwork failed/);
-  assert.equal(requests.length, 1);
-  assert.match(requests[0], /api\.cloudflare\.com/);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1], /api\.cloudflare\.com/);
   const calls = db().prepare("SELECT model,outcome FROM ai_calls").all();
-  assert.deepEqual(calls.map((call) => ({ ...call })), [
-    { model: "@cf/black-forest-labs/flux-1-schnell", outcome: "failed" },
-  ]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].model, "@cf/black-forest-labs/flux-1-schnell");
+  assert.equal(calls[1].outcome, "failed");
 }));
 
 function geminiResponse(url: string): Response {
@@ -104,7 +106,7 @@ test("Gemini text alone cannot enable AI artwork", async () => fixture(async () 
       title: "Weekend collection", caption: "Browse the collection.", subtitle: "Fresh picks" }) }));
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /CLOUDFLARE_ACCOUNT_ID/);
-  assert.equal(db().prepare("SELECT id FROM ai_calls").all().length, 0);
+  assert.equal(db().prepare("SELECT id FROM ai_calls").all().length, 1);
 }));
 
 test("the old video request is rejected before calling any provider", async () => fixture(async () => {
