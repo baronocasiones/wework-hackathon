@@ -16,9 +16,14 @@ Scope: `src/lib/generation.ts`, `src/lib/styles.ts`, `src/lib/cloudflare.ts`, `s
 
 `CLOUDFLARE_IMAGE_STEPS`, `CLOUDFLARE_IMAGE_MODEL`, `AGENT_ENABLED`, `AGENT_SCORE_THRESHOLD`, `AGENT_DAILY_CAP`, `GEMINI_VISION_MODEL`, `FAL_VIDEO_AUDIO_TRACK`, `FFMPEG_FONT_PATH`.
 
-## Token cost estimate
+## Token cost estimate (verified live)
 
-~$0.00013 per Gemini vision critique; ~$0.00026/image worst case; ~$0.005/day at 20 images. Video dominated by fal (~$0.15-0.30/day).
+- Style (gemini-3.5-flash-lite): ~137 input + 7 output = 144 tokens.
+- Critique (gemini-3.1-flash-lite): ~1207 input + 137 output = 1344 tokens (~$0.0002-0.0004 per critique at Flash Lite rates).
+- Copy (gemini-3.5-flash-lite): ~112 input + 81 output = 193 tokens.
+- Cloudflare artwork/template: free (no tokens; ~3-8s).
+- fal video: billed ~$0.15, no tokens; ~30-40s.
+- Per artwork (style + generate + critique): ~1488 Gemini tokens + 1 Cloudflare call. ~$0.0003 worst case. ~$0.006/day at 20 images. Video dominated by fal (~$0.15-0.30/day).
 
 ## Tests
 
