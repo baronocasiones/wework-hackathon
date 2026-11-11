@@ -8,6 +8,8 @@ import { uploadLocalFile } from "@/lib/media";
 import { geminiText } from "@/lib/gemini";
 import { cloudflareImage } from "@/lib/cloudflare";
 import { assertFalVideoReady, falVideo } from "@/lib/fal-video";
+import { getStyle, recommendStyle, type StyleName } from "@/lib/styles";
+import { agentEnabled, dailyAgentCap, runImageAgentLoop, runVideoAgentLoop, todayAgentCallCount } from "@/lib/agent-critique";
 
 type GeneratedImage = { bytes: Buffer; mimeType: string };
 
@@ -78,12 +80,14 @@ async function storeNativeVideo(bytes: Buffer): Promise<string> {
   return uploadLocalFile(videoPath, "video");
 }
 
-export async function createGeneratedAsset(args: { kind: "template" | "artwork" | "grok_video"; prompt: string; title?: string; caption?: string; subtitle?: string; templateBackgroundFile?: string | null }): Promise<{ runId: string; title: string; kind: "image" | "video"; source: string; mediaUrl: string; caption: string; subtitle: string; templateHeadline?: string; templateBody?: string; templateBackgroundFile?: string | null }> {
+export async function createGeneratedAsset(args: { kind: "template" | "artwork" | "grok_video"; prompt: string; title?: string; caption?: string; subtitle?: string; templateBackgroundFile?: string | null; style?: string }): Promise<{ runId: string; title: string; kind: "image" | "video"; source: string; mediaUrl: string; caption: string; subtitle: string; style: string; templateHeadline?: string; templateBody?: string; templateBackgroundFile?: string | null }> {
   if (args.kind === "grok_video") assertFalVideoReady();
   const runId = randomUUID();
   const { copy } = await recommendCopy({ kind: args.kind === "grok_video" ? "video" : "image", context: args.prompt,
     title: args.title, caption: args.caption, subtitle: args.subtitle }, runId);
   const { title, caption, subtitle } = copy;
+  const styleName = args.style && getStyle(args.style).name === args.style ? args.style : await recommendStyle(args.prompt, runId);
+  const style = getStyle(styleName);
   const isTemplate = args.kind === "template";
   let mediaUrl: string;
   let source = "template";
@@ -94,7 +98,7 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     await mkdir(directory, { recursive: true });
     templateBackgroundFile = args.templateBackgroundFile;
     if (templateBackgroundFile === undefined) {
-      const background = await cloudflareImage(`A clean, premium social media background for ${args.prompt}. No words, letters, logos, or typography. Leave quiet space for readable text.`, runId, "template_background");
+      const background = await cloudflareImage(`A clean, premium social media background for ${args.prompt}. ${style.promptSuffix}. No words, letters, logos, or typography. Leave quiet space for readable text.`, runId, "template_background");
       templateBackgroundFile = `${runId}-background.jpg`;
       await writeFile(path.join(directory, templateBackgroundFile), background.bytes);
     }
@@ -102,22 +106,60 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     const headlinePath = path.resolve(process.env.UPLOAD_DIR ?? "./public/uploads", `${runId}-headline.txt`);
     await writeFile(headlinePath, wrapText(title.replace(/[\r\n]+/g, " ").slice(0, 70), 25, 3));
     await writeFile(textPath, wrapText(subtitle.replace(/[\r\n]+/g, " ").slice(0, 100), 45, 3));
+    const headlineSize = title.length > 40 ? 42 : style.headlineSize;
+    const bodySize = subtitle.length > 80 ? 26 : 30;
+    const fontFile = process.env.FFMPEG_FONT_PATH ? `:fontfile=${process.env.FFMPEG_FONT_PATH}` : "";
     const input = templateBackgroundFile === null
       ? ["-f", "lavfi", "-i", "color=c=0xDCEBE2:s=1080x1350:d=1"]
       : ["-i", path.join(directory, path.basename(templateBackgroundFile))];
     await runFfmpeg(["-y", ...input, "-vf",
-      "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350,drawbox=x=60:y=790:w=960:h=500:color=0x1C3B33:t=fill,drawtext=textfile=" + headlinePath + ":fontcolor=white:fontsize=50:line_spacing=4:x=115:y=835,drawtext=textfile=" + textPath + ":fontcolor=0xD9E9DF:fontsize=30:line_spacing=4:x=115:y=1015,drawtext=text='SHOP THE DROP':fontcolor=0xF2B46E:fontsize=32:x=115:y=1175",
+      "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350,drawbox=x=60:y=790:w=960:h=500:color=0x1C3B33:t=fill,drawtext=textfile=" + headlinePath + fontFile + ":fontcolor=white:fontsize=" + headlineSize + ":line_spacing=4:x=115:y=835,drawtext=textfile=" + textPath + fontFile + ":fontcolor=0xD9E9DF:fontsize=" + bodySize + ":line_spacing=4:x=115:y=1015,drawtext=text='SHOP THE DROP':fontcolor=0xF2B46E:fontsize=32:x=115:y=1175",
       "-frames:v", "1", localPath]);
     mediaUrl = await uploadLocalFile(localPath, "image");
   } else if (args.kind === "artwork") {
-    const artwork = await cloudflareImage(args.prompt, runId);
-    mediaUrl = await storeArtwork(artwork);
+    const basePrompt = `${args.prompt}. ${style.promptSuffix}`;
+    if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+      const result = await runImageAgentLoop({
+        runId, prompt: basePrompt, style: style.name,
+        generate: async (p) => {
+          const img = await cloudflareImage(p, runId);
+          const url = await storeArtwork(img);
+          return { bytes: img.bytes, mediaUrl: url };
+        },
+      });
+      mediaUrl = result.mediaUrl;
+    } else {
+      const artwork = await cloudflareImage(basePrompt, runId);
+      mediaUrl = await storeArtwork(artwork);
+    }
     source = "cloudflare_artwork";
   } else {
-    const video = await falVideo(args.prompt, runId);
-    mediaUrl = await storeNativeVideo(video.bytes);
+    if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+      const result = await runVideoAgentLoop({
+        runId, prompt: args.prompt, style: style.name, maxAttempts: 2,
+        generate: async (p) => {
+          let v = await falVideo(p, runId);
+          const track = process.env.FAL_VIDEO_AUDIO_TRACK?.trim();
+          if (track) {
+            const { muxAmbientAudio } = await import("@/lib/fal-video");
+            v = { bytes: await muxAmbientAudio(v.bytes, track), mimeType: "video/mp4" };
+          }
+          const url = await storeNativeVideo(v.bytes);
+          return { bytes: v.bytes, mediaUrl: url };
+        },
+      });
+      mediaUrl = result.mediaUrl;
+    } else {
+      let video = await falVideo(args.prompt, runId);
+      const track = process.env.FAL_VIDEO_AUDIO_TRACK?.trim();
+      if (track) {
+        const { muxAmbientAudio } = await import("@/lib/fal-video");
+        video = { bytes: await muxAmbientAudio(video.bytes, track), mimeType: "video/mp4" };
+      }
+      mediaUrl = await storeNativeVideo(video.bytes);
+    }
     source = "fal_grok_native_video";
   }
-  return { runId, title, kind: args.kind === "grok_video" ? "video" : "image", source, mediaUrl, caption, subtitle,
+  return { runId, title, kind: args.kind === "grok_video" ? "video" : "image", source, mediaUrl, caption, subtitle, style: style.name,
     ...(isTemplate ? { templateHeadline: title, templateBody: subtitle, templateBackgroundFile } : {}) };
 }
