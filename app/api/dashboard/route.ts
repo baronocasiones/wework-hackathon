@@ -7,18 +7,25 @@ export const runtime = "nodejs";
 type VideoStats = { id: string; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } };
 type Metric = { platform: string; label: string; views: number; likes: number; comments: number; engagement: number; source: "live" | "demo"; postCount: number; sales: number; revenue: number };
 
+let cachedYoutubeStats: { key: string; map: Map<string, VideoStats>; at: number } | null = null;
+
 async function youtubeStats(ids: string[]): Promise<Map<string, VideoStats>> {
+  const key = ids.join(",");
+  if (cachedYoutubeStats && cachedYoutubeStats.key === key && Date.now() - cachedYoutubeStats.at < 60_000) {
+    return cachedYoutubeStats.map;
+  }
   const map = new Map<string, VideoStats>();
   if (!ids.length || !process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return map;
   let accessToken: string;
   try { accessToken = await googleAccessToken(); } catch { return map; }
-  const fields = new URLSearchParams({ part: "statistics", id: ids.join(",") });
+  const fields = new URLSearchParams({ part: "statistics", id: key });
   try {
     const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?${fields}`, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) return map;
     const data = await response.json() as { items?: VideoStats[] };
     for (const item of data.items ?? []) map.set(item.id, item);
   } catch { return map; }
+  cachedYoutubeStats = { key, map, at: Date.now() };
   return map;
 }
 
@@ -47,10 +54,11 @@ export async function GET(): Promise<Response> {
         sales: purchase?.count ?? 0, revenue: purchase?.revenue ?? 0 };
     });
     const recentJobs = database.prepare(`SELECT j.*,c.title,c.kind,c.media_url FROM publish_jobs j JOIN content c ON c.id=j.content_id ORDER BY j.created_at DESC LIMIT 30`).all();
+    const backlog = (database.prepare("SELECT COUNT(*) n FROM publish_jobs WHERE status='queued'").get() as { n: number }).n;
     const usage = database.prepare(`SELECT run_id,MIN(created_at) started_at,COUNT(*) calls,CASE WHEN COUNT(input_tokens)=0 THEN NULL ELSE SUM(input_tokens) END input_tokens,CASE WHEN COUNT(output_tokens)=0 THEN NULL ELSE SUM(output_tokens) END output_tokens,CASE WHEN COUNT(total_tokens)=0 THEN NULL ELSE SUM(total_tokens) END total_tokens,SUM(duration_ms) duration_ms FROM ai_calls GROUP BY run_id ORDER BY started_at DESC LIMIT 10`).all();
     const aiCalls = database.prepare("SELECT id,operation,model,input_tokens,output_tokens,total_tokens,duration_ms,outcome,created_at FROM ai_calls ORDER BY created_at DESC LIMIT 20").all();
     const credentialEvents = database.prepare("SELECT id,platform,event,expires_at,outcome,detail,created_at FROM credential_events ORDER BY created_at DESC LIMIT 10").all();
-    return Response.json({ metrics, jobs: recentJobs, usage, aiCalls, credentialEvents,
+    return Response.json({ metrics, jobs: recentJobs, backlog, usage, aiCalls, credentialEvents,
       configured: { cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN), gemini: Boolean(process.env.GEMINI_API_KEY), openAi: Boolean(process.env.OPENAI_API_KEY), cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET), meta: Boolean(process.env.META_PAGE_ID && process.env.META_PAGE_ACCESS_TOKEN && process.env.META_IG_USER_ID), google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && (process.env.GOOGLE_REFRESH_TOKEN || database.prepare("SELECT value FROM app_secrets WHERE key='google_refresh_token'").get())), publicLinks: (process.env.APP_URL ?? "http://localhost:8000").startsWith("https://") && !/localhost|127\.0\.0\.1/i.test(process.env.APP_URL ?? "http://localhost:8000") } });
   } catch (error) { return jsonError(error instanceof Error ? error.message : "Dashboard is unavailable.", 500); }
 }

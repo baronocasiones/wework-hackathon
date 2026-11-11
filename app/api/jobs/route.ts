@@ -32,8 +32,15 @@ export async function POST(request: Request): Promise<Response> {
     });
     database.exec("COMMIT");
     return Response.json({ jobs }, { status: 201 });
-  } catch {
+  } catch (error) {
     database.exec("ROLLBACK");
-    return jsonError("A posting job already exists for one of these platforms at that time.", 409);
+    const message = error instanceof Error ? error.message : "";
+    if (/UNIQUE constraint/i.test(message)) {
+      return jsonError("A posting job already exists for one of these platforms at that time.", 409);
+    }
+    if (/tracked product link/i.test(message)) {
+      return jsonError(message, 400);
+    }
+    return jsonError("Could not schedule this post. Please try again.", 500);
   }
 }
