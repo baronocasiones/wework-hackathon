@@ -8,19 +8,19 @@ From `/home/adrian/codes/wework-hackathon`, copy `.env.example` to `.env.local`.
 
 Keep `META_PUBLISH_MODE=simulated` and leave `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` blank. Create or upload content, choose Facebook or Instagram, and press **Post now** or set a schedule. The worker changes each due job to **Simulated post**. These jobs make zero Meta requests and have no Meta post ID or link. The dashboard keeps their counts apart from live posts. The local product preview links can still record demo purchases; sample engagement and sales are labeled demo data.
 
-## Create Publication Materials and text
+## Generate artwork and text
 
-To test either Publication Materials option, create an API token with Workers AI access in the [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens). Add your account ID as `CLOUDFLARE_ACCOUNT_ID` and the token as `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`, then restart the app. Cloudflare FLUX.1 Schnell is the only AI image provider. The template's Cloudflare background is generated once and reused when you edit its text. The AI usage panel shows Cloudflare image token counts as unavailable because its response does not provide them.
-
-1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey). Add it as `GEMINI_API_KEY` in `.env.local` or `.env` to suggest titles, captions, and subtitles. Gemini is not used for artwork or video.
-2. Restart the app, create one template and one AI artwork Publication Materials item, and inspect **AI usage & account activity**. Gemini text calls show provider-reported token counts. Cloudflare image token counts appear as **unavailable**. Blank text also has local defaults if Gemini cannot respond.
+1. Add `FAL_KEY` to `.env.local` to generate Ideogram artwork. Ideogram renders the headline, supporting line, and call to action inside the image. Inspect the lettering before you schedule the post. Ideogram calls use fal credits, including calls made when you edit the text.
+2. Add `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` for the Cloudflare fallback. If fal is unavailable, Cloudflare creates the artwork and FFmpeg adds editable text. Set `ARTWORK_TEXT_MODE=overlay` to use that path directly.
+3. To get text suggestions, add `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/app/apikey). Blank fields use local defaults if Gemini is unavailable. The optional image and video critique loop also uses Gemini vision.
+4. Restart the app, generate one artwork item, and inspect the image and **AI usage & account activity**. Gemini calls show provider-reported token counts. Image provider calls can show token counts as unavailable.
 
 ## Test Grok moving video
 
 1. Open [fal's Grok Imagine sandbox](https://fal.ai/grok-imagine-free) and check the free runs or account pricing shown above **Generate**. Free eligibility varies by active offer; there is no promised daily quota. When a run is available, upload a starting image there, describe the motion, export the MP4, and upload it in the studio. This manual path needs no API key in the studio. A billing-locked fal account cannot upload to the sandbox.
 2. The free sandbox allowance does not cover automated text-to-video API calls. For that path, create a key in the [fal dashboard](https://fal.ai/dashboard/keys) and put it in `FAL_KEY` in `.env` or `.env.local`. Keep `FAL_KEY` blank until you are ready for billed API use. Do not paste the key into the studio or chat.
-3. Leave `FAL_VIDEO_DURATION=5` and `FAL_VIDEO_RESOLUTION=720p` for the first billed test. At [current fal pricing](https://fal.ai/models/xai/grok-imagine-video/v1.5/lite/text-to-video/api), this text-to-video test costs about $0.15. For the final 15-second Reel, set the duration to 15. Restart the app after changing the file.
-4. Use **Grok motion video** in the studio. The app requests a 9:16 clip through fal's Lite text-to-video endpoint, waits for the queue, saves the MP4, and shows it in the preview. The AI usage log records the call; token fields remain unavailable because the video response does not provide token counts.
+3. Leave `FAL_VIDEO_DURATION=5` and `FAL_VIDEO_RESOLUTION=720p` for the first billed test. Check the [fal model page](https://fal.ai/models/xai/grok-imagine-video/v1.5/lite/text-to-video/api) for the current price. For a 15-second Reel, set the duration to 15. Restart the app after changing the file.
+4. Use **Grok motion video** in the studio. Grok chooses its own on-screen wording, so inspect the clip before you schedule it. If Grok fails, the app tries an Ideogram still with motion, then a Cloudflare still with motion. The AI usage log records the provider call; token fields remain unavailable when the response does not provide counts.
 
 ## Host media for live publishing only
 
@@ -59,4 +59,4 @@ Google requires [OAuth 2.0](https://developers.google.com/youtube/data/guides/au
 
 ## Verify before the presentation
 
-Start the web app and worker together. Check the configured-account badges, then publish one image to Facebook and Instagram and one video to Facebook, Instagram, and YouTube. Inspect the account pages and the per-platform job status. Schedule a separate post a few minutes ahead, restart the worker, and check that it publishes after the restart. Open a platform-specific product link, record a demo purchase, and check the sales attribution. The dashboard labels live engagement and demo sales separately.
+Start the web app and worker together. Check the configured-account badges, then run one Facebook and one Instagram simulation. Confirm that each job has `simulated` status and no provider post link. If YouTube is configured, publish one video and confirm its public URL and job status. Schedule another post a few minutes ahead, restart the worker, and check its status after the scheduled time. Open a platform-specific product link, record a demo purchase, and check the sales attribution. The dashboard labels live engagement and demo sales separately.

@@ -1,44 +1,41 @@
 # Post House content studio
 
-A single-operator demo for making social content, preparing platform-specific posts, scheduling them, and comparing results. Facebook and Instagram posting runs locally in simulation mode by default. Local uploads and simulated posts need no platform credentials or public media hosting.
+Post House is a local studio for creating social posts, scheduling them, and tracking demo purchases. Facebook and Instagram use local publishing simulations by default. YouTube uses a live connection when you configure it.
 
-## Run locally
+## Run the studio locally
 
-1. Install Node.js 22 or newer and FFmpeg. This app uses Node 22's built-in `node:sqlite` module, which is marked experimental by Node in this release line.
-2. Copy `.env.example` to `.env.local`. Keep every secret server-side. Do not commit `.env.local`.
+1. Install Node.js 22 or newer and FFmpeg. The app uses Node's built-in `node:sqlite` module.
+2. Copy `.env.example` to `.env.local`. Set `STUDIO_PASSWORD` if the first owner will register through a public tunnel. Keep secrets out of Git.
 3. Run `npm install`.
-4. Run `npm run dev` in one terminal.
-5. Run `npm run worker` in a second terminal. The worker checks the SQLite schedule every five seconds.
-6. Open `http://localhost:8000/register` to create the first owner account, then use `/login` on later visits. If `STUDIO_PASSWORD` is set, enter that value as the one-time setup key during registration.
+4. Run `npm run dev` in one terminal and `npm run worker` in another. The worker checks due jobs every five seconds.
+5. Open `http://localhost:8000/register` and create the owner account. If set, enter `STUDIO_PASSWORD` as the one-time setup key. Use `http://localhost:8000/login` on later visits.
 
-The app scripts bind to `localhost` on port 8000 so the local demo is not reachable directly from the LAN. Point any HTTPS tunnel at `http://localhost:8000`.
+Both processes read `.env.local`. The worker also reads `.env` if present. Restart both processes after you change environment values. The app listens on localhost port 8000; point an HTTPS tunnel at `http://localhost:8000` if other people need to open the public product page.
 
-The app stores SQLite data under `./data/studio.sqlite` and local preview files under `./public/uploads`. Owner credentials and revocable sessions are also stored in SQLite; passwords are salted with scrypt and session tokens are stored as hashes. Registration creates only the first owner account. If `STUDIO_PASSWORD` is set, it is a one-time setup key for that registration; it is no longer a browser Basic Auth password. Without a setup key, registration is restricted to localhost. Set a strong setup key before exposing an unregistered studio through a public tunnel. Sign in at `/login` with the account password, and use **Sign out** to revoke the current session. The product page, demo checkout, and uploaded media stay public.
+The app stores accounts, sessions, content, jobs, and demo purchases in `./data/studio.sqlite`. It stores local media under `./public/uploads` unless you set `DATABASE_PATH` or `UPLOAD_DIR`. Without `STUDIO_PASSWORD`, first-owner registration works only on localhost. Registration closes after the first account is created.
 
-Set `META_PUBLISH_MODE=simulated` and leave `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` blank for the hackathon demo. The worker records Facebook and Instagram simulations without contacting Meta. Local previews and simulated posting need no Cloudinary URL or public tunnel. Live publishing needs signed Cloudinary uploads and a public HTTPS `APP_URL`; use a tunnel only if other people need to open the demo product page. `GOOGLE_REDIRECT_URI` can remain `http://localhost:8000/api/oauth/google/callback` for local OAuth.
+## Create a post
 
-See `/setup` in the app for a short credential checklist. The operator should also use the separate `SETUP.md` for full account configuration steps.
+Enter a campaign idea in the studio, then choose **AI artwork Publication Materials**, **Grok motion video**, or upload your own image or video. You can leave the title, caption, and subtitle blank. Gemini suggests text when `GEMINI_API_KEY` is set; otherwise, the app uses local defaults.
 
-For both Publication Materials options, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env.local` or `.env`. [Cloudflare FLUX.1 Schnell](https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/) is the only image generator. The template uses a Cloudflare background with locally editable text; editing the text reuses that background. Gemini can suggest titles, captions, and subtitles; without its key, blank text receives local defaults. Cloudflare does not report token usage in its image response, so its token fields show unavailable. Restart the app after changing environment values.
+For AI artwork, set `FAL_KEY` to use Ideogram. Ideogram draws the headline, supporting line, and call to action inside the image. Its lettering is best effort, so inspect the result before scheduling. If fal is unavailable, the app uses Cloudflare artwork with text added by FFmpeg. Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` for that fallback. Set `ARTWORK_TEXT_MODE=overlay` to use the Cloudflare path directly.
 
-For moving video, check [fal's Grok sandbox](https://fal.ai/grok-imagine-free) for any free image-to-video runs currently available to your account, then download an MP4 and upload it to the studio. fal does not promise a fixed free daily allowance, and a billing-locked account cannot upload there. Sandbox offers do not cover the text-to-video API. To generate from text inside the studio, add a fal API key as `FAL_KEY` in `.env` or `.env.local` and restart. The separate **Grok motion video** option calls fal's billed `xai/grok-imagine-video/v1.5/lite/text-to-video` endpoint. Its defaults are 5 seconds, 720p, and 9:16; set `FAL_VIDEO_DURATION=15` for a full-length Reel. The studio polls the fal queue, downloads the MP4, and saves a local or Cloudinary copy. See [fal's Lite API documentation](https://fal.ai/models/xai/grok-imagine-video/v1.5/lite/text-to-video/api).
+For motion video, `FAL_KEY` enables Grok Imagine Video 1.5 Lite. Grok chooses its own on-screen wording, which may differ from the post copy. If Grok fails, the app tries an Ideogram still with motion, then a Cloudflare still with motion. `FAL_VIDEO_DURATION` defaults to five seconds. Grok and Ideogram API calls use fal credits, including calls made when you update text on their generated assets. Cloudflare fallback text can be rendered again from the saved base media.
 
-## What the app records
+The image and video critique loop is on by default when Gemini vision is available. Use `AGENT_ENABLED`, `AGENT_DAILY_CAP`, and `OVERLAY_QA_ENABLED` to control its calls. See `.env.example` for the available values.
 
-- One SQLite publish job per selected platform, with schedule, status, provider ID, public link, and any error.
-- A job becomes published only after the provider returns a resource ID and a visible permalink or confirmed public YouTube processing state. Simulated Facebook and Instagram jobs have a separate `simulated` status, no provider ID or post link, and a separate dashboard count. The job's mode is saved when scheduled; changing the environment later cannot turn a simulated job into a live request. Ambiguous live uploads are never retried automatically. The worker checks one pending YouTube upload per minute and counts it after YouTube confirms public processing.
-- Provider-reported AI input, output, and total tokens per call, elapsed time, outcome, and run aggregation. Missing token usage is stored and displayed as unavailable.
-- Credential observation, issuance, and refresh events with time, expiry when known, and outcome. Token values are never written to event details or app logs.
-- YouTube view, like, and comment counts from the YouTube API when available. Other engagement examples and all product purchases are labeled demo data.
+## Schedule a post
 
-## Commands
+Leave `META_PUBLISH_MODE=simulated` and the Meta credential fields blank for the local demo. Start the worker before scheduling. Facebook and Instagram jobs finish with a separate `simulated` status and do not receive a provider post ID or link. Changing the environment later does not turn an existing simulated job into a live post.
 
-- `npm run dev` starts the web app.
-- `npm run worker` starts the local scheduler and publisher.
-- `npm run typecheck` checks TypeScript types.
-- `npm test` runs focused domain and restart-behavior tests.
-- `npm run build` creates the production build.
+To connect YouTube, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `YOUTUBE_CHANNEL_ID`. Register the same redirect URI in Google Cloud, then choose **Connect YouTube** in the studio. The default local redirect is `http://localhost:8000/api/oauth/google/callback`.
 
-## Limitations
+Live publishing requires Cloudinary credentials for public HTTPS media and a non-local HTTPS `APP_URL`. Meta live publishing also requires `META_PUBLISH_MODE=live` and Meta credentials; that path has not been verified for the demo. The studio, worker, and SQLite database must remain available when a scheduled job is due. Queued jobs survive a restart.
 
-Meta live publishing is outside the hackathon demo and has not been verified. Only an explicit `META_PUBLISH_MODE=live` setting can enable it; that mode still requires Meta credentials, public Cloudinary media, and a public `APP_URL`. YouTube remains a live integration. Gemini text and fal video generation require their respective keys and model access. For Instagram demo sales, open the platform-specific preview link in the studio; no Instagram post exists in simulation mode. The app and worker must remain running when a scheduled job becomes due, although queued jobs survive restarts.
+## Check the app
+
+- `npm run typecheck` checks TypeScript.
+- `npm test` runs the focused test suite.
+- `npm run build` creates a production build.
+
+Open `/setup` for the in-app credential checklist. Use the [setup guide](SETUP.md) for service configuration. The [generation notes](docs/generation.md) describe provider paths and known limits. The [pipeline notes](docs/pipeline.md) describe job states and retry behavior.
