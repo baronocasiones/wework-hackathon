@@ -112,6 +112,15 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Corrected in `AGENTS.md`: the optimistic-transition convention cited dead `markJobStarted`; the real claim path is `claimDueJob` (`src/lib/jobs.ts:10-14`).
 - Additive "superseded claims" notes appended to `docs/demo-readiness.md` and `docs/meta-publishing.md`, both pointing at `docs/architecture.md` §8. No existing content was removed from any doc.
 
+### 2026-11-12 — Marketing captions on generated media
+
+- Burned-in marketing captions (headline + supporting line + AI-generated CTA) added to template pubmats, AI artwork, and Grok videos via new `src/lib/render-overlay.ts`. Style-aware palette, accessible text shadow, platform-safe lower-third (animated fade-in for video, audio copied).
+- `recommendCopy` returns `cta` (additive `CopyResult`); default "SHOP NOW".
+- Clean base media stored as `thumbnail_url` filename for all generated assets; `content.template_cta` column added (guarded migration).
+- `PATCH /api/content/[id]` re-renders image/video assets from base file with updated headline/body/cta + stored style; no Cloudinary/AI re-call.
+- UI caption editor widened to all generated assets with CTA input.
+- Verification: typecheck clean, 26/26 tests, build 15 routes. No new dependencies.
+
 ### 2026-11-12 — Owner accounts, simulated Meta mode, studio UI pass
 
 - Replaced the Basic-auth gate with SQLite owner accounts: `/register` (first owner only; `STUDIO_PASSWORD` is an optional one-time setup key, otherwise localhost-only), `/login`, `/logout`, scrypt password hashes, hashed session tokens (`post_house_session`, 7 days), login throttling, and origin checks (`src/lib/auth.ts`). Middleware is now a redirect hint; every privileged page and API calls `apiAccess()`/`sessionUser()`.
