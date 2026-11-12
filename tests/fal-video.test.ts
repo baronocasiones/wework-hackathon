@@ -51,7 +51,7 @@ test("fal Grok Lite submits a short vertical clip, downloads it, and records usa
     if (url === endpoint) {
       assert.equal(init?.method, "POST");
       assert.equal(new Headers(init.headers).get("Authorization"), "Key test-fal-secret");
-      assert.deepEqual(JSON.parse(String(init.body)), { prompt: "A blue tote bag moving through a market",
+      assert.deepEqual(JSON.parse(String(init.body)), { prompt: "A blue tote bag moving through a market. clean editorial photography, soft natural light, muted greens and cream, premium minimal composition, lots of quiet negative space",
         duration: 5, aspect_ratio: "9:16", resolution: "720p" });
       return Response.json({ status: "IN_QUEUE", request_id: "request-123", status_url: statusUrl, response_url: responseUrl });
     }

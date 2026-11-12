@@ -6,7 +6,8 @@ const responseSchema = z.object({
   result: z.object({ image: z.string().min(1) }).optional(),
 });
 
-const ALLOWED_MODELS = ["@cf/black-forest-labs/flux-1-schnell"];
+const ALLOWED_MODELS = ["@cf/black-forest-labs/flux-1-schnell", "@cf/black-forest-labs/flux-2-klein-4b"];
+const KLEIN_MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
 
 function cloudflareModel(): string {
   const requested = process.env.CLOUDFLARE_IMAGE_MODEL?.trim();
@@ -26,14 +27,30 @@ export async function cloudflareImage(prompt: string, runId: string, operation =
   if (!account || !token) throw new Error("Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN to enable Cloudflare artwork.");
 
   const chosenModel = cloudflareModel();
+  const isKlein = chosenModel === KLEIN_MODEL;
   const steps = cloudflareSteps();
   const started = Date.now();
   let outcome: "success" | "failed" = "failed";
   try {
+    let body: BodyInit;
+    let headers: Record<string, string>;
+    if (isKlein) {
+      const form = new FormData();
+      form.set("prompt", prompt.slice(0, 2048));
+      form.set("width", "1024");
+      form.set("height", "1024");
+      const seed = process.env.CLOUDFLARE_IMAGE_SEED?.trim();
+      if (seed) form.set("seed", seed);
+      body = form;
+      headers = { Authorization: `Bearer ${token}` };
+    } else {
+      body = JSON.stringify({ prompt: prompt.slice(0, 2048), steps });
+      headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    }
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/ai/run/${chosenModel}`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: prompt.slice(0, 2048), steps }),
+      headers,
+      body,
       signal: AbortSignal.timeout(90_000),
     });
     if (!response.ok) throw new Error(`Cloudflare artwork failed with status ${response.status}. Check Workers AI access and token permissions.`);

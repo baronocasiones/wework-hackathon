@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createGeneratedAsset, recommendCopy } from "../src/lib/generation";
+import { runImageAgentLoop } from "../src/lib/agent-critique";
 import { db } from "../src/lib/db";
 import { POST as uploadContent } from "../app/api/content/route";
 import { POST as generateContent } from "../app/api/generate/route";
@@ -109,6 +110,30 @@ test("Gemini text alone cannot enable AI artwork", async () => fixture(async () 
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /CLOUDFLARE_ACCOUNT_ID/);
   assert.equal(db().prepare("SELECT id FROM ai_calls").all().length, 1);
+}));
+
+test("the agent loop keeps the best-scoring asset across attempts", async () => fixture(async () => {
+  process.env.GEMINI_API_KEY = "test-gemini-key";
+  const scores = [65, 55];
+  let critiqueCall = 0;
+  globalThis.fetch = async () => {
+    const score = scores[critiqueCall++] ?? 50;
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+      score, issues: ["soft busy background"], revisedPrompt: `revised prompt ${critiqueCall}` }) }] } }],
+      usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 5, totalTokenCount: 10 } });
+  };
+  const assets = [
+    { bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1]), mediaUrl: "https://example.test/first.png", baseMediaUrl: "first-base.png" },
+    { bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 2]), mediaUrl: "https://example.test/second.png", baseMediaUrl: "second-base.png" },
+  ];
+  let generated = 0;
+  const result = await runImageAgentLoop({ runId: "test-run-best-of-n", prompt: "weekend prompt", style: "clean_editorial", maxAttempts: 2,
+    generate: async () => assets[generated++] });
+  assert.equal(result.mediaUrl, "https://example.test/first.png");
+  assert.equal(result.baseMediaUrl, "first-base.png");
+  assert.equal(result.finalScore, 65);
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0].accepted, false);
 }));
 
 test("the old video request is rejected before calling any provider", async () => fixture(async () => {

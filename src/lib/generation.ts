@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { z } from "zod";
@@ -10,7 +10,8 @@ import { cloudflareImage } from "@/lib/cloudflare";
 import { assertFalVideoReady, falVideo } from "@/lib/fal-video";
 import { getStyle, recommendStyle, type StyleName } from "@/lib/styles";
 import { renderImageOverlay, renderVideoOverlay } from "@/lib/render-overlay";
-import { agentEnabled, dailyAgentCap, runImageAgentLoop, runVideoAgentLoop, todayAgentCallCount } from "@/lib/agent-critique";
+import { agentEnabled, dailyAgentCap, runImageAgentLoop, runVideoAgentLoop, todayAgentCallCount, critiqueImage, extractFirstFrame, extractFrameAt, recordAttempt } from "@/lib/agent-critique";
+import { buildArtworkPrompt } from "@/lib/artwork-prompt";
 
 type GeneratedImage = { bytes: Buffer; mimeType: string };
 
@@ -46,7 +47,8 @@ export async function recommendCopy(args: CopyRequest & { cta?: string }, runId 
       "Return only a JSON object with nonempty title, caption, subtitle, and cta strings. Make the title specific and under 70 characters. " +
       "Make the caption friendly with one call to action and under 500 characters. Make the subtitle a short on-media line under 100 characters. " +
       "Make the cta a short uppercase call to action under 20 characters (e.g. SHOP NOW, LEARN MORE, DISCOVER). " +
-      "Do not invent prices, discounts, or product claims that the context does not support.";
+      "Do not invent prices, discounts, or product claims that the context does not support.\n" +
+      "Example: {\"title\":\"Weekend market favorites\",\"caption\":\"Stroll the weekend market and find fresh picks from local makers. See you there!\",\"subtitle\":\"Local finds, every weekend\",\"cta\":\"SHOP NOW\"}";
     try { suggestion = parseSuggestedCopy(await geminiText(prompt, runId, "copy")); }
     catch { /* Keep local defaults when Gemini text is unavailable. */ }
   }
@@ -77,6 +79,40 @@ function runFfmpeg(args: string[]): Promise<void> {
     child.once("error", reject);
     child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${String(code)}.`)));
   });
+}
+
+export function overlayQaEnabled(isVideo: boolean): boolean {
+  const raw = (process.env.OVERLAY_QA_ENABLED ?? "videos").trim().toLowerCase();
+  if (raw === "all") return true;
+  if (raw === "off" || raw === "false" || raw === "0") return false;
+  if (raw === "images") return !isVideo;
+  return isVideo;
+}
+
+async function overlayReadabilityQa(args: { renderedPath: string; isVideo: boolean; title: string; subtitle: string; cta: string; styleName: string; runId: string; reRender: (fontScale: number) => Promise<void> }): Promise<void> {
+  if (!overlayQaEnabled(args.isVideo)) return;
+  const qaPrompt = `social pubmat: headline "${args.title}", body "${args.subtitle}", CTA "${args.cta}"`;
+  let bytes: Buffer | null = null;
+  try {
+    bytes = await readFile(args.renderedPath);
+    if (args.isVideo) bytes = extractFrameAt(bytes, 1.0) ?? extractFirstFrame(bytes);
+  } catch {
+    bytes = null;
+  }
+  if (!bytes || bytes.length === 0) {
+    recordAttempt(args.runId, 1, "overlay_qa", -1, ["overlay QA could not read the rendered file"], qaPrompt, true);
+    return;
+  }
+  const critique = await critiqueImage(bytes, qaPrompt, args.styleName, args.runId, "overlay");
+  const accepted = critique.score >= 70 || critique.score === -1;
+  recordAttempt(args.runId, 1, "overlay_qa", critique.score, critique.issues, critique.revisedPrompt, accepted);
+  if (critique.score >= 0 && critique.score < 70) {
+    try {
+      await args.reRender(1.35);
+    } catch {
+      // QA never blocks shipping; keep the 1.0 font-scale render.
+    }
+  }
 }
 
 async function storeNativeVideo(bytes: Buffer): Promise<string> {
@@ -118,6 +154,8 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     const basePath = templateBackgroundFile === null ? null : path.join(directory, path.basename(templateBackgroundFile));
     if (basePath) {
       await renderImageOverlay(basePath, localPath, { headline: title, body: subtitle, cta, style });
+      await overlayReadabilityQa({ renderedPath: localPath, isVideo: false, title, subtitle, cta, styleName: style.name, runId,
+        reRender: (fontScale) => renderImageOverlay(basePath, localPath, { headline: title, body: subtitle, cta, style, fontScale }) });
     } else {
       // fallback solid background
       await runFfmpeg(["-y", "-f", "lavfi", "-i", "color=c=0xDCEBE2:s=1080x1350:d=1", "-frames:v", "1", localPath]);
@@ -126,7 +164,7 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     baseFileName = templateBackgroundFile ?? null;
   } else if (isArtwork) {
     source = "cloudflare_artwork";
-    const basePrompt = `${args.prompt}. ${style.promptSuffix}`;
+    const basePrompt = buildArtworkPrompt(args.prompt, style.promptSuffix);
     const renderArtwork = async (prompt: string): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
       const img = await cloudflareImage(prompt, runId);
       const baseFile = `${runId}-artwork-base.jpg`;
@@ -137,6 +175,8 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
       const scaledBase = `${runId}-artwork-scaled.png`;
       await runFfmpeg(["-y", "-i", path.join(directory, baseFile), "-vf", "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350", "-frames:v", "1", path.join(directory, scaledBase)]);
       await renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style });
+      await overlayReadabilityQa({ renderedPath, isVideo: false, title, subtitle, cta, styleName: style.name, runId,
+        reRender: (fontScale) => renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
       const url = await uploadLocalFile(renderedPath, "image");
       return { bytes: img.bytes, mediaUrl: url, baseFileName: scaledBase };
     };
@@ -145,11 +185,11 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
         runId, prompt: basePrompt, style: style.name,
         generate: async (p) => {
           const r = await renderArtwork(p);
-          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName } as any;
+          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
         },
       });
       mediaUrl = result.mediaUrl;
-      baseFileName = (result as any).baseMediaUrl ?? null;
+      baseFileName = result.baseMediaUrl ?? null;
     } else {
       const r = await renderArtwork(basePrompt);
       mediaUrl = r.mediaUrl;
@@ -157,6 +197,7 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     }
   } else {
     source = "fal_grok_native_video";
+    const videoPrompt = `${args.prompt}. ${style.promptSuffix}`;
     const renderVideo = async (prompt: string): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
       let v = await falVideo(prompt, runId);
       const track = process.env.FAL_VIDEO_AUDIO_TRACK?.trim();
@@ -169,21 +210,23 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
       const renderedFile = `${runId}-video.mp4`;
       const renderedPath = path.join(directory, renderedFile);
       await renderVideoOverlay(path.join(directory, baseFile), renderedPath, { headline: title, body: subtitle, cta, style });
+      await overlayReadabilityQa({ renderedPath, isVideo: true, title, subtitle, cta, styleName: style.name, runId,
+        reRender: (fontScale) => renderVideoOverlay(path.join(directory, baseFile), renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
       const url = await uploadLocalFile(renderedPath, "video");
       return { bytes: v.bytes, mediaUrl: url, baseFileName: baseFile };
     };
     if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
       const result = await runVideoAgentLoop({
-        runId, prompt: args.prompt, style: style.name, maxAttempts: 2,
+        runId, prompt: videoPrompt, style: style.name, maxAttempts: 2,
         generate: async (p) => {
           const r = await renderVideo(p);
-          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName } as any;
+          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
         },
       });
       mediaUrl = result.mediaUrl;
-      baseFileName = (result as any).baseMediaUrl ?? null;
+      baseFileName = result.baseMediaUrl ?? null;
     } else {
-      const r = await renderVideo(args.prompt);
+      const r = await renderVideo(videoPrompt);
       mediaUrl = r.mediaUrl;
       baseFileName = r.baseFileName;
     }
