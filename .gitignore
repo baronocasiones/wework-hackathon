@@ -9,3 +9,4 @@ public/uploads/*
 *.tsbuildinfo
 .audit
 generated_images
+scripts/eval-quality.ts
