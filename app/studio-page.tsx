@@ -5,7 +5,7 @@ import { ArrowDownRight, ArrowUpRight, CalendarClock, Check, ChevronDown, Clock3
 import { FacebookPostPreview, type FacebookPreview } from "./facebook-post-preview";
 
 type Platform = "facebook" | "instagram" | "youtube";
-type Content = { id: string; title: string; kind: "image" | "video"; source: string; media_url: string; caption: string; subtitle: string; created_at: string; template_headline: string | null; template_body: string | null };
+type Content = { id: string; title: string; kind: "image" | "video"; source: string; media_url: string; caption: string; subtitle: string; created_at: string; template_headline: string | null; template_body: string | null; template_cta: string | null };
 type Job = { id: string; platform: Platform; title: string; kind: "image" | "video"; caption: string; scheduled_at: string; status: string; provider_id: string | null; permalink: string | null; error: string | null; media_url: string };
 type Metric = { platform: Platform; label: string; views: number; likes: number; comments: number; engagement: number; source: "live" | "demo"; postCount: number; simulatedPostCount: number; sales: number; revenue: number };
 type Dashboard = { metrics: Metric[]; jobs: Job[]; usage: Array<{ run_id: string; calls: number; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number }>; aiCalls: Array<{ id: string; operation: string; model: string; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; duration_ms: number; outcome: string; created_at: string }>; credentialEvents: Array<{ id: string; platform: string; event: string; expires_at: string | null; outcome: string; detail: string; created_at: string }>; configured: { falVideo: boolean; cloudflare: boolean; gemini: boolean; cloudinary: boolean; metaMode: "simulated" | "live"; meta: boolean; google: boolean; publicLinks: boolean } };
@@ -31,6 +31,7 @@ export default function Home() {
   const [draftSubtitle, setDraftSubtitle] = useState("");
   const [headline, setHeadline] = useState("A little something for you");
   const [templateBody, setTemplateBody] = useState("");
+  const [cta, setCta] = useState("SHOP NOW");
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadSubtitle, setUploadSubtitle] = useState("");
@@ -52,6 +53,7 @@ export default function Home() {
         setCaptions(Object.fromEntries(defaults.map((platform) => [platform, chosen.caption])));
         setHeadline(chosen.template_headline ?? chosen.title);
         setTemplateBody(chosen.template_body ?? chosen.subtitle);
+        setCta(chosen.template_cta ?? "SHOP NOW");
       }
     }
     if (dashboardResponse.ok) setDashboard(await dashboardResponse.json() as Dashboard);
@@ -101,13 +103,14 @@ export default function Home() {
     setCaptions(Object.fromEntries(defaults.map((platform) => [platform, asset?.caption ?? ""])));
     setHeadline(asset?.template_headline ?? asset?.title ?? "");
     setTemplateBody(asset?.template_body ?? asset?.subtitle ?? "");
+    setCta(asset?.template_cta ?? "SHOP NOW");
   }
 
   async function saveTemplate() {
     if (!current) return;
     setBusy(true); setMessage("");
     try {
-      const response = await fetch(`/api/content/${current.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ headline, body: templateBody }) });
+      const response = await fetch(`/api/content/${current.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ headline, body: templateBody, cta }) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? "Could not update these Publication Materials.");
       await load(); setMessage("Publication Materials text updated.");
@@ -194,7 +197,7 @@ export default function Home() {
           <section className="card planner-card">
             <div className="card-heading"><div><div className="eyebrow">YOUR NEXT POST</div><h2>Make it yours</h2></div><span className="step-pill">02 <span>PLAN</span></span></div>
             {current ? <><div className="selected-content"><button type="button" className="preview-thumb" onClick={() => previewRef.current?.showModal()} aria-label={`View preview of ${current.title}`}>{current.kind === "video" ? <video src={current.media_url} muted preload="metadata"/> : <img src={current.media_url} alt=""/>}<span className="media-type">{current.kind === "video" ? <Video size={12}/> : <ImagePlus size={12}/>} {current.kind}</span><span className="preview-expand"><Maximize2 size={13}/></span></button><div className="selected-info"><button type="button" className="preview-title" onClick={() => previewRef.current?.showModal()}>{current.title}</button><small>{current.subtitle || "No subtitle"}</small><small>{current.source.replaceAll("_", " ")} · Added {new Date(current.created_at).toLocaleDateString()}</small><label htmlFor="asset-picker" className="field-label">Content</label><select id="asset-picker" value={selected} onChange={(event) => setContent(event.target.value)}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div></div>
-                {current.source === "template" && <div className="template-editor"><div className="field-label">Edit Publication Materials text <span>Changes the image layout</span></div><input maxLength={70} value={headline} onChange={(event) => setHeadline(event.target.value)} aria-label="Publication Materials headline"/><textarea maxLength={100} rows={2} value={templateBody} onChange={(event) => setTemplateBody(event.target.value)} aria-label="Publication Materials supporting text"/><button className="text-button" onClick={() => void saveTemplate()} disabled={busy}>Update Publication Materials</button></div>}
+                {(current.source === "template" || current.source === "cloudflare_artwork" || current.source === "fal_grok_native_video") && <div className="template-editor"><div className="field-label">Edit on-media captions <span>Changes the media layout</span></div><input maxLength={70} value={headline} onChange={(event) => setHeadline(event.target.value)} aria-label="Publication Materials headline"/><textarea maxLength={100} rows={2} value={templateBody} onChange={(event) => setTemplateBody(event.target.value)} aria-label="Publication Materials supporting text"/><input maxLength={40} value={cta} onChange={(event) => setCta(event.target.value)} aria-label="Call to action" placeholder="CTA"/><button className="text-button" onClick={() => void saveTemplate()} disabled={busy}>Update captions</button></div>}
                 <div className="field-label platform-label">Where should it go?</div><div className="platform-pills">{availablePlatforms.map(({ id, name, icon: Icon }) => <button key={id} type="button" aria-pressed={targets.includes(id)} className={`platform-pill ${targets.includes(id) ? "platform-selected" : ""}`} onClick={() => toggleTarget(id)}><Icon size={15}/>{name}{targets.includes(id) && <Check size={13}/>}</button>)}</div>
                 {targets.length > 0 && <div className="tracked-links">{targets.map((platform) => <a key={platform} href={`/product?platform=${platform}&campaign=${encodeURIComponent(current.id)}`} target="_blank" rel="noreferrer">Preview {platforms.find((item) => item.id === platform)?.name} product link ↗</a>)}</div>}
                 <div className="caption-list">{targets.map((platform) => <label key={platform} className="caption-field"><span>{platforms.find((item) => item.id === platform)?.name} caption</span><textarea value={captions[platform] ?? current.caption} onChange={(event) => setCaptions((existing) => ({ ...existing, [platform]: event.target.value }))} rows={2}/></label>)}</div>
