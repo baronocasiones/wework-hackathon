@@ -1,5 +1,9 @@
 # Module: Meta (Facebook Page + Instagram) publishing
 
+## Hackathon demo mode
+
+`META_PUBLISH_MODE=simulated` is the default and the value in `.env.example`. Leave `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` blank. Facebook and Instagram jobs run through the existing SQLite queue and worker without any Meta request, public media URL, or tunnel. Each job stores its mode when created. Its terminal status is `simulated`, with no provider ID or permalink. Queued simulated jobs survive a restart; an interrupted simulated job returns to the queue. Older live jobs retain live mode and stay in review after an interrupted attempt. The dashboard reports simulated counts separately from confirmed live posts, and all sample engagement and sales figures are labeled demo data. Only a deliberate `META_PUBLISH_MODE=live` value allows the live Meta branches to run; live mode still requires credentials and public URLs. This section supersedes the older no-credential behavior below.
+
 Scope: the `META_*` credentials, the Facebook/Instagram branches of `src/lib/publish.ts`, and how they behave in the demo build.
 
 ## Current state (2026-11-12)

@@ -130,7 +130,7 @@ Replace `catch {}` with typed discrimination:
 | Timeout addition (C1) | `claimDueJob` updates only `WHERE status='queued'` and requires `changes === 1`; a hung job never writes a terminal status, so the next worker start recovers it to `uncertain`. | `repro-hang.ts` + `jobs.test.ts` (claim one-shot, restart recovery). |
 | Dashboard cache (H1) | The studio UI polls `/api/dashboard` every 12s and reads `configured` + `metrics`; it does not depend on `credential_events` growth or token refresh. | `app/page.tsx:58` polling; `dashboard/route.ts` response shape unchanged. |
 | Schedule catch split (H3) | The route's transaction is `BEGIN IMMEDIATE` ... `COMMIT`/`ROLLBACK`; splitting the catch does not change the transactional guarantee. | `jobs/route.ts:25-37`. |
-| YouTube confirmation (C2) | `publishJob` returns `needs_review` for non-confirmed outcomes; the worker writes `needs_review` which is terminal and never auto-retried. No retry loop exists. | `worker/index.ts:20,28`; architecture §7. |
+| YouTube confirmation (C2) | `publishJob` returns `needs_review` for non-confirmed outcomes. The worker checks accepted YouTube uploads once per minute and marks them `published` only after public processing is confirmed. It never retries the upload. | `src/worker/index.ts`; `tests/youtube-reconcile.test.ts`. |
 
 ## 6. Benchmark evidence
 

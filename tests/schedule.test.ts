@@ -6,6 +6,7 @@ import test from "node:test";
 import { db } from "../src/lib/db";
 import { POST as scheduleJobs } from "../app/api/jobs/route";
 import { POST as postNow } from "../app/api/jobs/[id]/publish/route";
+import { authorizeTestDatabase } from "./auth-fixture";
 
 test("schedule returns 409 for a duplicate job and 500 for other DB errors", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "post-house-schedule-"));
@@ -17,19 +18,20 @@ test("schedule returns 409 for a duplicate job and 500 for other DB errors", asy
 
   try {
     const database = db();
+    const auth = authorizeTestDatabase();
     database.prepare("INSERT INTO content(id,title,kind,source,media_url,caption,created_at,subtitle) VALUES(?,?,?,?,?,?,?,?)")
       .run("content-1", "T", "image", "upload", "https://res.cloudinary.com/demo/image/upload/sample.jpg", "cap", "2026-11-11T00:00:00.000Z", "");
 
     // First schedule succeeds.
     const first = await scheduleJobs(new Request("http://localhost:8000/api/jobs", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify({ contentId: "content-1", targets: ["instagram"], captions: {}, scheduledAt: "2099-01-01T00:00:00.000Z" }),
     }));
     assert.equal(first.status, 201);
 
     // Duplicate returns 409.
     const duplicate = await scheduleJobs(new Request("http://localhost:8000/api/jobs", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify({ contentId: "content-1", targets: ["instagram"], captions: {}, scheduledAt: "2099-01-01T00:00:00.000Z" }),
     }));
     assert.equal(duplicate.status, 409);
@@ -37,7 +39,7 @@ test("schedule returns 409 for a duplicate job and 500 for other DB errors", asy
     // A non-duplicate DB error returns 500, not 409.
     database.exec("CREATE TRIGGER fail_publish_jobs BEFORE INSERT ON publish_jobs BEGIN SELECT RAISE(ABORT, 'forced failure'); END");
     const errored = await scheduleJobs(new Request("http://localhost:8000/api/jobs", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify({ contentId: "content-1", targets: ["facebook"], captions: {}, scheduledAt: "2099-02-02T00:00:00.000Z" }),
     }));
     assert.equal(errored.status, 500);

@@ -1,11 +1,11 @@
 import { db, nowIso } from "@/lib/db";
-import { type Platform, type PublishOutcome, type PublishFailureReason, PublishError } from "@/lib/domain";
+import { type Platform, type PublishOutcome, type PublishFailureReason, type PublishMode, metaPublishMode, PublishError } from "@/lib/domain";
 export { PublishError };
 import { loadPublicMedia } from "@/lib/media";
 import { observeCredential, recordCredentialEvent } from "@/lib/monitoring";
 import { providerError } from "@/lib/http";
 
-type Job = { id: string; platform: Platform; caption: string; media_url: string; kind: "image" | "video"; title: string };
+type Job = { id: string; platform: Platform; publish_mode: PublishMode; caption: string; media_url: string; kind: "image" | "video"; title: string };
 type JsonObject = Record<string, unknown>;
 const asRecord = (value: unknown): JsonObject => typeof value === "object" && value !== null ? value as JsonObject : {};
 const stringField = (value: JsonObject, field: string): string | null => typeof value[field] === "string" ? value[field] as string : null;
@@ -119,7 +119,12 @@ async function youtube(job: Job): Promise<PublishOutcome> {
   const data = asRecord(await upload.json());
   const videoId = stringField(data, "id");
   if (!videoId) throw new PublishError("incomplete", "YouTube returned no video ID; outcome requires review.");
+  return verifyYoutubeVideo(videoId, token);
+}
+
+export async function verifyYoutubeVideo(videoId: string, accessToken?: string): Promise<PublishOutcome> {
   const permalink = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  const token = accessToken ?? await googleAccessToken();
   const verifyParams = new URLSearchParams({ part: "snippet,status,processingDetails", id: videoId });
   const verification = await fetch(`https://www.googleapis.com/youtube/v3/videos?${verifyParams}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!verification.ok) return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
@@ -132,10 +137,10 @@ async function youtube(job: Job): Promise<PublishOutcome> {
   if (uploadStatus === "failed" || uploadStatus === "rejected") {
     throw new PublishError("rejected_4xx", `YouTube upload ended in ${uploadStatus}.`);
   }
-  if (uploadStatus !== "processed") {
+  if (stringField(first, "id") !== videoId || uploadStatus !== "processed") {
     return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
   }
-  if (stringField(snippet, "channelId") !== channelId || stringField(status, "privacyStatus") !== "public" || stringField(processing, "processingStatus") === "failed") {
+  if (stringField(snippet, "channelId") !== process.env.YOUTUBE_CHANNEL_ID || stringField(status, "privacyStatus") !== "public" || stringField(processing, "processingStatus") !== "succeeded") {
     return { kind: "needs_review", providerId: videoId, permalink, reason: "accepted_pending" };
   }
   return { kind: "published", providerId: videoId, permalink };
@@ -181,6 +186,10 @@ function assertLiveMediaUrl(url: string): void {
 }
 
 export async function publishJob(job: Job): Promise<PublishOutcome> {
+  if (job.platform !== "youtube") {
+    if (job.publish_mode === "simulated") return { kind: "simulated" };
+    if (metaPublishMode() !== "live") throw new PublishError("not_enabled", "Live Meta publishing is disabled. This job needs review before a live attempt.");
+  }
   return job.platform === "facebook" ? await facebook(job) : job.platform === "instagram" ? await instagram(job) : await youtube(job);
 }
 

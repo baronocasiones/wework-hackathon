@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { createJobsSchema, allowedPlatforms, allowedPlatformCaption, type MediaKind, type Platform } from "@/lib/domain";
+import { createJobsSchema, allowedPlatforms, allowedPlatformCaption, metaPublishMode, type MediaKind, type Platform } from "@/lib/domain";
 import { db, nowIso } from "@/lib/db";
 import { jsonError } from "@/lib/http";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   return Response.json(db().prepare(`SELECT j.*,c.title,c.kind,c.media_url FROM publish_jobs j JOIN content c ON c.id=j.content_id ORDER BY j.scheduled_at DESC LIMIT 60`).all());
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const parsed = createJobsSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Choose at least one platform and a valid posting time.");
   const { contentId, targets, captions, scheduledAt } = parsed.data;
@@ -20,14 +23,14 @@ export async function POST(request: Request): Promise<Response> {
   if (new Set(targets).size !== targets.length) return jsonError("Choose each platform once.");
   const time = scheduledAt ?? nowIso();
   if (Date.parse(time) < Date.now() - 60_000) return jsonError("Choose a future time or post now.");
-  const insert = db().prepare("INSERT INTO publish_jobs(id,content_id,platform,caption,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,?)");
+  const insert = db().prepare("INSERT INTO publish_jobs(id,content_id,platform,publish_mode,caption,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',?,?)");
   const database = db();
   try {
     database.exec("BEGIN IMMEDIATE");
     const jobs = targets.map((platform) => {
       const id = randomUUID();
       const caption = captions[platform]?.trim() || content.caption;
-      insert.run(id, contentId, platform, allowedPlatformCaption(caption, platform, contentId, process.env.APP_URL ?? "http://localhost:8000"), time, nowIso(), nowIso());
+      insert.run(id, contentId, platform, platform === "youtube" ? "live" : metaPublishMode(), allowedPlatformCaption(caption, platform, contentId, process.env.APP_URL ?? "http://localhost:8000"), time, nowIso(), nowIso());
       return { id, platform, scheduledAt: time, status: "queued" };
     });
     database.exec("COMMIT");

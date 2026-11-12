@@ -1,6 +1,6 @@
 # Post House content studio
 
-A single-operator demo for making social content, preparing platform-specific posts, scheduling them, and comparing results. Local uploads work without image API keys. AI generation, public media hosting, and live publishing require the credentials below.
+A single-operator demo for making social content, preparing platform-specific posts, scheduling them, and comparing results. Facebook and Instagram posting runs locally in simulation mode by default. Local uploads and simulated posts need no platform credentials or public media hosting.
 
 ## Run locally
 
@@ -9,11 +9,13 @@ A single-operator demo for making social content, preparing platform-specific po
 3. Run `npm install`.
 4. Run `npm run dev` in one terminal.
 5. Run `npm run worker` in a second terminal. The worker checks the SQLite schedule every five seconds.
-6. Open `http://localhost:8000`.
+6. Open `http://localhost:8000/register` to create the first owner account, then use `/login` on later visits. If `STUDIO_PASSWORD` is set, enter that value as the one-time setup key during registration.
 
 The app scripts bind to `localhost` on port 8000 so the local demo is not reachable directly from the LAN. Point any HTTPS tunnel at `http://localhost:8000`.
 
-The app stores SQLite data under `./data/studio.sqlite` and local preview files under `./public/uploads`. Local preview URLs cannot be fetched by social networks. Live posts require signed Cloudinary uploads and a public HTTPS `APP_URL`; use a temporary HTTPS tunnel for the demo product page and set `APP_URL` to that tunnel address. `GOOGLE_REDIRECT_URI` can remain `http://localhost:8000/api/oauth/google/callback` for local OAuth. Before opening a public tunnel, set a strong `STUDIO_PASSWORD` in `.env.local`. The browser asks for the operator username and password before opening the studio or its privileged APIs. The product page, demo checkout, and uploaded media stay public. The app refuses public access to privileged routes if the password is blank.
+The app stores SQLite data under `./data/studio.sqlite` and local preview files under `./public/uploads`. Owner credentials and revocable sessions are also stored in SQLite; passwords are salted with scrypt and session tokens are stored as hashes. Registration creates only the first owner account. If `STUDIO_PASSWORD` is set, it is a one-time setup key for that registration; it is no longer a browser Basic Auth password. Without a setup key, registration is restricted to localhost. Set a strong setup key before exposing an unregistered studio through a public tunnel. Sign in at `/login` with the account password, and use **Sign out** to revoke the current session. The product page, demo checkout, and uploaded media stay public.
+
+Set `META_PUBLISH_MODE=simulated` and leave `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` blank for the hackathon demo. The worker records Facebook and Instagram simulations without contacting Meta. Local previews and simulated posting need no Cloudinary URL or public tunnel. Live publishing needs signed Cloudinary uploads and a public HTTPS `APP_URL`; use a tunnel only if other people need to open the demo product page. `GOOGLE_REDIRECT_URI` can remain `http://localhost:8000/api/oauth/google/callback` for local OAuth.
 
 See `/setup` in the app for a short credential checklist. The operator should also use the separate `SETUP.md` for full account configuration steps.
 
@@ -24,7 +26,7 @@ For moving video, check [fal's Grok sandbox](https://fal.ai/grok-imagine-free) f
 ## What the app records
 
 - One SQLite publish job per selected platform, with schedule, status, provider ID, public link, and any error.
-- A job becomes published only after the provider returns a resource ID and a visible permalink or confirmed public YouTube processing state. Interrupted or ambiguous jobs become `uncertain` or `needs_review`; they are never retried automatically.
+- A job becomes published only after the provider returns a resource ID and a visible permalink or confirmed public YouTube processing state. Simulated Facebook and Instagram jobs have a separate `simulated` status, no provider ID or post link, and a separate dashboard count. The job's mode is saved when scheduled; changing the environment later cannot turn a simulated job into a live request. Ambiguous live uploads are never retried automatically. The worker checks one pending YouTube upload per minute and counts it after YouTube confirms public processing.
 - Provider-reported AI input, output, and total tokens per call, elapsed time, outcome, and run aggregation. Missing token usage is stored and displayed as unavailable.
 - Credential observation, issuance, and refresh events with time, expiry when known, and outcome. Token values are never written to event details or app logs.
 - YouTube view, like, and comment counts from the YouTube API when available. Other engagement examples and all product purchases are labeled demo data.
@@ -39,4 +41,4 @@ For moving video, check [fal's Grok sandbox](https://fal.ai/grok-imagine-free) f
 
 ## Limitations
 
-Live publishing was not verified without the team's Meta, Google, and Cloudinary credentials. Gemini text and fal video generation require their respective keys and model access. Instagram Reels may take up to 54 seconds to reach a ready container state. Facebook Reel requirements and platform account eligibility still apply. For the Instagram demo sale, open the platform-specific preview link in the studio or copy the tracked link into a channel that supports it. The worker and app must remain running for local scheduled posts.
+Meta live publishing is outside the hackathon demo and has not been verified. Only an explicit `META_PUBLISH_MODE=live` setting can enable it; that mode still requires Meta credentials, public Cloudinary media, and a public `APP_URL`. YouTube remains a live integration. Gemini text and fal video generation require their respective keys and model access. For Instagram demo sales, open the platform-specific preview link in the studio; no Instagram post exists in simulation mode. The app and worker must remain running when a scheduled job becomes due, although queued jobs survive restarts.

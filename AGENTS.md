@@ -27,7 +27,8 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 | `app/setup/page.tsx` | In-app credential checklist |
 | `app/product/*` | Public tracked product page + demo checkout |
 | `app/api/*` | Route handlers (`content`, `jobs`, `dashboard`, `media`, `oauth/google`, `purchase`) |
-| `middleware.ts` | HTTP Basic gate for the studio; public paths: `/product*`, `/api/purchase`, `/uploads/*`, `/api/media/*` |
+| `middleware.ts` | Optimistic sign-in redirect; pages and privileged APIs verify SQLite sessions server-side. Public paths: `/login`, `/register`, `/api/auth/*`, `/product*`, `/api/purchase`, `/uploads/*`, `/api/media/*` |
+| `src/lib/auth.ts` | First-owner account, scrypt password hashing, hashed SQLite sessions, origin checks |
 | `src/lib/db.ts` | SQLite connection + schema bootstrap |
 | `src/lib/domain.ts` | Zod schemas, platform enums, caption limits |
 | `src/lib/publish.ts` | Platform publishers |
@@ -38,22 +39,22 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 ## Conventions
 
 - Secrets are server-side only, from `.env.local` (never committed, never logged). `providerError()` in `src/lib/http.ts` redacts token values from error text; `monitoring.ts` stores credential metadata, never values.
-- Every privileged route is gated by `middleware.ts`; the app refuses public access when `STUDIO_PASSWORD` is blank.
+- Registration creates one owner. `STUDIO_PASSWORD` is a one-time setup key when configured; without it, first registration is localhost-only. Middleware is only a navigation hint; every privileged page and API checks the SQLite session.
 - One `publish_jobs` row per content × platform × scheduled time (`UNIQUE(content_id, platform, scheduled_at)`).
-- A job becomes `published` only on a provider ID **and** a confirmed permalink / public processing state. Ambiguous outcomes become `uncertain` or `needs_review` and are never auto-retried. Known 4xx rejections become `failed`.
+- A job becomes `published` only on a provider ID **and** a confirmed permalink / public processing state. Facebook and Instagram jobs default to `publish_mode='simulated'` and finish with status `simulated`, no provider ID, and no post link. Their dashboard count is separate from live posts. Ambiguous live outcomes become `uncertain` or `needs_review` and are never auto-retried. Known 4xx rejections become `failed`.
 - Optimistic status transitions: `claimDueJob` / publish-now update only `WHERE status='queued'`, so races fail closed. (`markJobStarted` in `publish.ts` is dead code; see `docs/architecture.md`.)
-- Media must be a public Cloudinary HTTPS URL and `APP_URL` must be a non-local HTTPS address before live publishing (`assertLiveMediaUrl`).
+- Media must be a public Cloudinary HTTPS URL and `APP_URL` must be a non-local HTTPS address before live publishing (`assertLiveMediaUrl`). Simulated Meta jobs use local media without either requirement.
 - Platform branches are isolated functions in `src/lib/publish.ts`; adding a platform means extending the enum in `domain.ts` and the switch in `publishJob`.
 - No Meta OAuth route exists; Meta credentials are paste-in env values. Google/YouTube is the only OAuth flow.
 - Tests are focused on domain logic, job state transitions, and restart behavior.
 
 ## Environment (`.env.example`)
 
-`APP_URL`, `STUDIO_USERNAME`, `STUDIO_PASSWORD`, `DATABASE_PATH`, `UPLOAD_DIR`, `OPENAI_API_KEY` (+ model names), `CLOUDINARY_*`, `META_GRAPH_VERSION`, `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, `META_IG_USER_ID`, `GOOGLE_*`, `YOUTUBE_CHANNEL_ID`.
+`APP_URL`, `STUDIO_PASSWORD`, `DATABASE_PATH`, `UPLOAD_DIR`, `GEMINI_API_KEY`, `CLOUDFLARE_*`, `FAL_KEY`, `CLOUDINARY_*`, `META_PUBLISH_MODE`, `META_GRAPH_VERSION`, `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, `META_IG_USER_ID`, `GOOGLE_*`, `YOUTUBE_CHANNEL_ID`.
 
 ## Module status
 
-- **Meta publishing** — see `docs/meta-publishing.md`. Implemented, unverified, deliberately left unconfigured for the demo.
+- **Meta publishing** — see `docs/meta-publishing.md`. Local simulation is the demo default and verified; live Meta posting remains unverified and out of scope.
 - **Demo readiness** — see `docs/demo-readiness.md`. Audited 2026-11-12; the listed blockers (worker `.env`, OAuth port, Gemini vars) are **stale** — corrected in `docs/architecture.md` §8 and flagged in that file's "Superseded claims" section.
 - **Architecture** — see `docs/architecture.md`. Added 2026-11-12; owns topology, module map, data model, job invariants, and integration boundaries. Answers the monolith question (modular monolith + sidecar worker) and corrects stale claims in the other docs.
 - **Pipeline (schedule → publish → worker)** — see `docs/pipeline.md`. Added 2026-11-12; owns pipeline behavior, outcome taxonomy, free-tier budget, findings (C1–M6), and implementation status. C1–C3, H1–H3, M3–M6 implemented; M1 (streaming) deferred.
@@ -93,3 +94,11 @@ Node 22+ and FFmpeg required. Both processes must run for scheduled posts.
 - Conventions established: `docs/architecture.md` owns topology, module map, data model, job invariants, flows, and integration boundaries; module docs own module behavior; `AGENTS.md` owns commands and conventions. Stale claims are corrected in the architecture doc rather than by rewriting the stale docs. Rendered diagrams are generated from the doc's mermaid source so image and source cannot drift.
 - Corrected in `AGENTS.md`: the optimistic-transition convention cited dead `markJobStarted`; the real claim path is `claimDueJob` (`src/lib/jobs.ts:10-14`).
 - Additive "superseded claims" notes appended to `docs/demo-readiness.md` and `docs/meta-publishing.md`, both pointing at `docs/architecture.md` §8. No existing content was removed from any doc.
+
+### 2026-11-12 — Owner accounts, simulated Meta mode, studio UI pass
+
+- Replaced the Basic-auth gate with SQLite owner accounts: `/register` (first owner only; `STUDIO_PASSWORD` is an optional one-time setup key, otherwise localhost-only), `/login`, `/logout`, scrypt password hashes, hashed session tokens (`post_house_session`, 7 days), login throttling, and origin checks (`src/lib/auth.ts`). Middleware is now a redirect hint; every privileged page and API calls `apiAccess()`/`sessionUser()`.
+- Added `publish_mode` (`simulated` | `live`) to `publish_jobs`, saved at schedule time, with an in-place SQLite migration. Facebook/Instagram default to `simulated` and terminate as status `simulated` with no provider ID or permalink; `META_PUBLISH_MODE=live` is required to reach the live branches. Dashboard counts simulated jobs separately.
+- Worker now re-queues interrupted simulated jobs instead of marking them `uncertain`, and re-checks one pending YouTube upload per minute (`verifyYoutubeVideo`) to promote `needs_review → published` or `→ failed` without re-uploading. Graceful shutdown clears the poll interval.
+- UI: `app/page.tsx` is now a session-gated server component rendering `app/studio-page.tsx`; added auth pages, brand assets (`public/brand`, `app/icon.svg`), Facebook post preview, and readable type/control tokens. `docs/superpowers/plans/2026-11-12-post-house-frontend.md` records the frontend plan.
+- Verification: typecheck clean, `npm test` 26/26, `npm run build` 15 routes. `.audit/` and `generated_images/` are local scratch and now gitignored; `.aws` is an empty stray file left untracked.

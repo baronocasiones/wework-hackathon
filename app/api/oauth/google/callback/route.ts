@@ -1,9 +1,11 @@
 import { db, nowIso } from "@/lib/db";
 import { recordCredentialEvent } from "@/lib/monitoring";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const current = new URL(request.url);
   const code = current.searchParams.get("code");
   const expected = (db().prepare("SELECT value FROM app_secrets WHERE key='oauth_state'").get() as { value?: string } | undefined)?.value;

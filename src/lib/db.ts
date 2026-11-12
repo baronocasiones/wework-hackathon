@@ -20,7 +20,8 @@ export function db(): DatabaseSync {
     );
     CREATE TABLE IF NOT EXISTS publish_jobs (
       id TEXT PRIMARY KEY, content_id TEXT NOT NULL REFERENCES content(id), platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram','youtube')),
-      caption TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','processing','published','failed','uncertain','needs_review')),
+      publish_mode TEXT NOT NULL CHECK(publish_mode IN ('simulated','live')),
+      caption TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','processing','published','simulated','failed','uncertain','needs_review')),
       provider_id TEXT, permalink TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(content_id, platform, scheduled_at)
     );
@@ -40,6 +41,17 @@ export function db(): DatabaseSync {
     CREATE TABLE IF NOT EXISTS app_secrets (
       key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      key TEXT PRIMARY KEY, failures INTEGER NOT NULL, blocked_until TEXT
+    );
     CREATE TABLE IF NOT EXISTS demo_purchases (
       id TEXT PRIMARY KEY, platform TEXT NOT NULL, campaign TEXT, amount REAL NOT NULL,
       created_at TEXT NOT NULL
@@ -55,6 +67,28 @@ export function db(): DatabaseSync {
     INSERT OR IGNORE INTO demo_metrics(platform,views,likes,comments) VALUES
       ('facebook',2480,186,22),('instagram',1920,241,18),('youtube',5210,332,41);
   `);
+  const jobColumns = connection.prepare("PRAGMA table_info(publish_jobs)").all();
+  if (!jobColumns.some((column) => column.name === "publish_mode")) {
+    connection.exec("PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE;");
+    try {
+      connection.exec(`
+        CREATE TABLE publish_jobs_new (
+          id TEXT PRIMARY KEY, content_id TEXT NOT NULL REFERENCES content(id), platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram','youtube')),
+          publish_mode TEXT NOT NULL CHECK(publish_mode IN ('simulated','live')),
+          caption TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','processing','published','simulated','failed','uncertain','needs_review')),
+          provider_id TEXT, permalink TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(content_id, platform, scheduled_at)
+        );
+        INSERT INTO publish_jobs_new(id,content_id,platform,publish_mode,caption,scheduled_at,status,provider_id,permalink,error,attempts,created_at,updated_at)
+          SELECT id,content_id,platform,CASE WHEN platform IN ('facebook','instagram') AND status='queued' THEN 'simulated' ELSE 'live' END,caption,scheduled_at,status,provider_id,permalink,error,attempts,created_at,updated_at FROM publish_jobs;
+        DROP TABLE publish_jobs;
+        ALTER TABLE publish_jobs_new RENAME TO publish_jobs;
+        CREATE INDEX jobs_due ON publish_jobs(status, scheduled_at);
+      `);
+      connection.exec("COMMIT;");
+    } catch (error) { connection.exec("ROLLBACK;"); throw error; }
+    finally { connection.exec("PRAGMA foreign_keys = ON;"); }
+  }
   const contentColumns = connection.prepare("PRAGMA table_info(content)").all();
   if (!contentColumns.some((column) => column.name === "template_headline")) connection.exec("ALTER TABLE content ADD COLUMN template_headline TEXT");
   if (!contentColumns.some((column) => column.name === "template_body")) connection.exec("ALTER TABLE content ADD COLUMN template_body TEXT");

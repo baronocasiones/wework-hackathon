@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { db, nowIso } from "@/lib/db";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI;
   if (!clientId || !redirectUri) return Response.json({ error: "Add GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI to .env.local first." }, { status: 400 });
