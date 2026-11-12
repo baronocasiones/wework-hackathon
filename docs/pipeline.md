@@ -189,3 +189,4 @@ Add: outcome mapping (C2), timeout recovery (C1), schedule error discrimination 
 - Added `POST /api/jobs/[id]/retry` (re-queues failed/uncertain/needs_review jobs with scheduled_at=now). Verified live against a real failed Facebook job.
 - Generation module added (see `docs/generation.md`): style system, image tuning, template fixes, audio probe/mux, runtime agent loop, cost guards.
 - Live verification passed for Gemini-backed paths, Cloudflare artwork/template, Grok video (with audio), agent loop, dashboard agent panel.
+- (2026-11-12, later session) Motion posters were briefly Ideogram still + Ken Burns only; then restored as **Grok text-to-video primary** with Ideogram Motion poster as the automatic fallback (user decision, cost constraints). See `docs/generation.md` for the full decision log and live verification.
