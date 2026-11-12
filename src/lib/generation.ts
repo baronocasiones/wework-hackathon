@@ -7,19 +7,16 @@ import { wrapText } from "@/lib/domain";
 import { uploadLocalFile } from "@/lib/media";
 import { geminiText } from "@/lib/gemini";
 import { cloudflareImage } from "@/lib/cloudflare";
-import { assertFalVideoReady, falVideo } from "@/lib/fal-video";
 import { getStyle, recommendStyle, type StyleName } from "@/lib/styles";
+import { falVideo, falVideoReady } from "@/lib/fal-video";
+import { artworkTextMode, buildPosterScene, kenBurnsDuration, kenBurnsVideo, generatePosterAsset, ideogramConfigured, ambientAudioFile, buildGrokInstruction, type PosterAsset } from "@/lib/ideogram";
 import { renderImageOverlay, renderVideoOverlay } from "@/lib/render-overlay";
 import { agentEnabled, dailyAgentCap, runImageAgentLoop, runVideoAgentLoop, todayAgentCallCount, critiqueImage, extractFirstFrame, extractFrameAt, recordAttempt } from "@/lib/agent-critique";
 import { buildArtworkPrompt } from "@/lib/artwork-prompt";
-
-type GeneratedImage = { bytes: Buffer; mimeType: string };
-
 const copySchema = z.object({ title: z.string().trim().min(1), caption: z.string().trim().min(1), subtitle: z.string().trim().min(1), cta: z.string().trim().min(1).max(40).optional() });
 export type ContentCopy = { title: string; caption: string; subtitle: string };
 export type CopyResult = { runId: string; copy: ContentCopy; cta: string };
 type CopyRequest = { kind: "image" | "video"; context: string; title?: string; caption?: string; subtitle?: string };
-
 function parseSuggestedCopy(text: string): { copy: ContentCopy; cta: string } {
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
@@ -30,7 +27,6 @@ function parseSuggestedCopy(text: string): { copy: ContentCopy; cta: string } {
     cta: (parsed.cta ?? "SHOP NOW").slice(0, 40),
   };
 }
-
 export async function recommendCopy(args: CopyRequest & { cta?: string }, runId = randomUUID()): Promise<CopyResult> {
   const provided = {
     title: args.title?.trim().slice(0, 120) ?? "",
@@ -38,7 +34,6 @@ export async function recommendCopy(args: CopyRequest & { cta?: string }, runId 
     subtitle: args.subtitle?.trim().slice(0, 100) ?? "",
   };
   if (provided.title && provided.caption && provided.subtitle) return { runId, copy: provided, cta: args.cta?.trim() || "SHOP NOW" };
-
   let suggestion: { copy: ContentCopy; cta: string } | undefined;
   if (process.env.GEMINI_API_KEY) {
     const prompt = `Suggest social post copy for a ${args.kind} about: ${args.context.slice(0, 1000)}.\n` +
@@ -52,7 +47,6 @@ export async function recommendCopy(args: CopyRequest & { cta?: string }, runId 
     try { suggestion = parseSuggestedCopy(await geminiText(prompt, runId, "copy")); }
     catch { /* Keep local defaults when Gemini text is unavailable. */ }
   }
-
   const topic = args.context.trim().replace(/\.[^.\s]{2,5}$/, "").slice(0, 70);
   const title = provided.title || suggestion?.copy.title || topic || (args.kind === "video" ? "New video" : "New Publication Materials");
   const cta = (args.cta?.trim() || suggestion?.cta || "SHOP NOW").slice(0, 40);
@@ -62,17 +56,6 @@ export async function recommendCopy(args: CopyRequest & { cta?: string }, runId 
     subtitle: provided.subtitle || suggestion?.copy.subtitle || "Discover what's new.",
   }, cta };
 }
-
-async function storeArtwork(image: GeneratedImage): Promise<string> {
-  const directory = path.resolve(process.env.UPLOAD_DIR ?? "./public/uploads");
-  await mkdir(directory, { recursive: true });
-  const localPath = path.join(directory, `${randomUUID()}.${image.mimeType === "image/jpeg" ? "jpg" : "png"}`);
-  await writeFile(localPath, image.bytes);
-  const normalized = path.join(directory, `${randomUUID()}-portrait.png`);
-  await runFfmpeg(["-y", "-i", localPath, "-vf", "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350", "-frames:v", "1", normalized]);
-  return uploadLocalFile(normalized, "image");
-}
-
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env.FFMPEG_PATH ?? "ffmpeg", args, { stdio: "ignore" });
@@ -80,7 +63,6 @@ function runFfmpeg(args: string[]): Promise<void> {
     child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${String(code)}.`)));
   });
 }
-
 export function overlayQaEnabled(isVideo: boolean): boolean {
   const raw = (process.env.OVERLAY_QA_ENABLED ?? "videos").trim().toLowerCase();
   if (raw === "all") return true;
@@ -88,7 +70,6 @@ export function overlayQaEnabled(isVideo: boolean): boolean {
   if (raw === "images") return !isVideo;
   return isVideo;
 }
-
 async function overlayReadabilityQa(args: { renderedPath: string; isVideo: boolean; title: string; subtitle: string; cta: string; styleName: string; runId: string; reRender: (fontScale: number) => Promise<void> }): Promise<void> {
   if (!overlayQaEnabled(args.isVideo)) return;
   const qaPrompt = `social pubmat: headline "${args.title}", body "${args.subtitle}", CTA "${args.cta}"`;
@@ -114,7 +95,6 @@ async function overlayReadabilityQa(args: { renderedPath: string; isVideo: boole
     }
   }
 }
-
 async function storeNativeVideo(bytes: Buffer): Promise<string> {
   const directory = path.resolve(process.env.UPLOAD_DIR ?? "./public/uploads");
   await mkdir(directory, { recursive: true });
@@ -122,11 +102,9 @@ async function storeNativeVideo(bytes: Buffer): Promise<string> {
   await writeFile(videoPath, bytes);
   return uploadLocalFile(videoPath, "video");
 }
-
-export async function createGeneratedAsset(args: { kind: "template" | "artwork" | "grok_video"; prompt: string; title?: string; caption?: string; subtitle?: string; cta?: string; templateBackgroundFile?: string | null; style?: string }): Promise<{ runId: string; title: string; kind: "image" | "video"; source: string; mediaUrl: string; caption: string; subtitle: string; style: string; templateHeadline?: string; templateBody?: string; templateCta?: string; templateBackgroundFile?: string | null }> {
-  if (args.kind === "grok_video") assertFalVideoReady();
+export async function createGeneratedAsset(args: { kind: "template" | "artwork" | "video"; prompt: string; title?: string; caption?: string; subtitle?: string; cta?: string; templateBackgroundFile?: string | null; style?: string }): Promise<{ runId: string; title: string; kind: "image" | "video"; source: string; mediaUrl: string; caption: string; subtitle: string; style: string; templateHeadline?: string; templateBody?: string; templateCta?: string; templateBackgroundFile?: string | null; posterPrompt: string | null }> {
   const runId = randomUUID();
-  const { copy, cta: generatedCta } = await recommendCopy({ kind: args.kind === "grok_video" ? "video" : "image", context: args.prompt,
+  const { copy, cta: generatedCta } = await recommendCopy({ kind: args.kind === "video" ? "video" : "image", context: args.prompt,
     title: args.title, caption: args.caption, subtitle: args.subtitle, cta: args.cta }, runId);
   const { title, caption, subtitle } = copy;
   const cta = args.cta?.trim() || generatedCta || "SHOP NOW";
@@ -134,14 +112,14 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
   const style = getStyle(styleName);
   const isTemplate = args.kind === "template";
   const isArtwork = args.kind === "artwork";
-  const isVideo = args.kind === "grok_video";
+  const isVideo = args.kind === "video";
   const directory = path.resolve(process.env.UPLOAD_DIR ?? "./public/uploads");
   await mkdir(directory, { recursive: true });
-  let mediaUrl: string;
+  let mediaUrl: string | null = null;
   let source = "template";
   let templateBackgroundFile: string | null | undefined;
   let baseFileName: string | null = null;
-
+  let posterPrompt: string | null = null;
   if (isTemplate) {
     source = "template";
     templateBackgroundFile = args.templateBackgroundFile;
@@ -162,80 +140,170 @@ export async function createGeneratedAsset(args: { kind: "template" | "artwork" 
     }
     mediaUrl = await uploadLocalFile(localPath, "image");
     baseFileName = templateBackgroundFile ?? null;
-  } else if (isArtwork) {
-    source = "cloudflare_artwork";
-    const basePrompt = buildArtworkPrompt(args.prompt, style.promptSuffix);
-    const renderArtwork = async (prompt: string): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
-      const img = await cloudflareImage(prompt, runId);
-      const baseFile = `${runId}-artwork-base.jpg`;
-      await writeFile(path.join(directory, baseFile), img.bytes);
-      const renderedFile = `${runId}-artwork.png`;
-      const renderedPath = path.join(directory, renderedFile);
-      // storeArtwork scales to portrait; do scaling + overlay in one pass via base file re-scale
-      const scaledBase = `${runId}-artwork-scaled.png`;
-      await runFfmpeg(["-y", "-i", path.join(directory, baseFile), "-vf", "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350", "-frames:v", "1", path.join(directory, scaledBase)]);
-      await renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style });
-      await overlayReadabilityQa({ renderedPath, isVideo: false, title, subtitle, cta, styleName: style.name, runId,
-        reRender: (fontScale) => renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
-      const url = await uploadLocalFile(renderedPath, "image");
-      return { bytes: img.bytes, mediaUrl: url, baseFileName: scaledBase };
-    };
-    if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
-      const result = await runImageAgentLoop({
-        runId, prompt: basePrompt, style: style.name,
-        generate: async (p) => {
-          const r = await renderArtwork(p);
-          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
-        },
-      });
-      mediaUrl = result.mediaUrl;
-      baseFileName = result.baseMediaUrl ?? null;
-    } else {
-      const r = await renderArtwork(basePrompt);
-      mediaUrl = r.mediaUrl;
-      baseFileName = r.baseFileName;
-    }
   } else {
-    source = "fal_grok_native_video";
-    const videoPrompt = `${args.prompt}. ${style.promptSuffix}`;
-    const renderVideo = async (prompt: string): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
-      let v = await falVideo(prompt, runId);
-      const track = process.env.FAL_VIDEO_AUDIO_TRACK?.trim();
-      if (track) {
-        const { muxAmbientAudio } = await import("@/lib/fal-video");
-        v = { bytes: await muxAmbientAudio(v.bytes, track), mimeType: "video/mp4" };
+    const posterFormat: "image" | "video" = isArtwork ? "image" : "video";
+    const scene = buildPosterScene(args.prompt, style);
+    posterPrompt = scene;
+    const posterCopy = { headline: title, body: subtitle, cta };
+    const renderPoster = (sceneNow: string): Promise<PosterAsset> =>
+      generatePosterAsset({ runId, scene: sceneNow, copy: posterCopy, style, format: posterFormat, durationSeconds: kenBurnsDuration() });
+    const useIdeogram = artworkTextMode() === "ideogram" && ideogramConfigured();
+    if (posterFormat === "video" && artworkTextMode() === "ideogram" && falVideoReady()) {
+      // Grok text-to-video primary: cheapest fal option under the demo's constraints.
+      // The model decides what text it renders from the prompt; accuracy is best-effort.
+      const renderGrok = async (): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
+        const promptForGrok = buildGrokInstruction(scene, style.promptSuffix);
+        const v = await falVideo(promptForGrok, runId);
+        const track = process.env.FAL_VIDEO_AUDIO_TRACK?.trim();
+        let muxed = v.bytes;
+        if (track) {
+          const { muxAmbientAudio } = await import("@/lib/fal-video");
+          muxed = await muxAmbientAudio(muxed, track);
+        }
+        const baseFile = `${runId}-grok-base.mp4`;
+        await writeFile(path.join(directory, baseFile), muxed);
+        const url = await uploadLocalFile(path.join(directory, baseFile), "video");
+        return { bytes: muxed, mediaUrl: url, baseFileName: baseFile };
+      };
+      source = "fal_grok_native_video";
+      try {
+        const grokPrompt = buildGrokInstruction(scene, style.promptSuffix);
+        if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+          const result = await runVideoAgentLoop({
+            runId, prompt: grokPrompt, style: style.name, maxAttempts: 2,
+            generate: async () => {
+              const r = await renderGrok();
+              return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
+            },
+          });
+          mediaUrl = result.mediaUrl;
+          baseFileName = result.baseMediaUrl ?? null;
+        } else {
+          const r = await renderGrok();
+          mediaUrl = r.mediaUrl;
+          baseFileName = r.baseFileName;
+        }
+      } catch {
+        mediaUrl = null;
+        baseFileName = null;
       }
-      const baseFile = `${runId}-video-base.mp4`;
-      await writeFile(path.join(directory, baseFile), v.bytes);
-      const renderedFile = `${runId}-video.mp4`;
-      const renderedPath = path.join(directory, renderedFile);
-      await renderVideoOverlay(path.join(directory, baseFile), renderedPath, { headline: title, body: subtitle, cta, style });
-      await overlayReadabilityQa({ renderedPath, isVideo: true, title, subtitle, cta, styleName: style.name, runId,
-        reRender: (fontScale) => renderVideoOverlay(path.join(directory, baseFile), renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
-      const url = await uploadLocalFile(renderedPath, "video");
-      return { bytes: v.bytes, mediaUrl: url, baseFileName: baseFile };
-    };
-    if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
-      const result = await runVideoAgentLoop({
-        runId, prompt: videoPrompt, style: style.name, maxAttempts: 2,
-        generate: async (p) => {
-          const r = await renderVideo(p);
-          return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
-        },
-      });
-      mediaUrl = result.mediaUrl;
-      baseFileName = result.baseMediaUrl ?? null;
-    } else {
-      const r = await renderVideo(videoPrompt);
-      mediaUrl = r.mediaUrl;
-      baseFileName = r.baseFileName;
+    }
+    if (useIdeogram && !mediaUrl) {
+      try {
+        if (posterFormat === "image") {
+          source = "ideogram_artwork";
+          if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+            const result = await runImageAgentLoop({
+              runId, prompt: scene, style: style.name,
+              generate: async (p) => {
+                const r = await renderPoster(p);
+                return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
+              },
+            });
+            mediaUrl = result.mediaUrl;
+            baseFileName = result.baseMediaUrl ?? null;
+          } else {
+            const r = await renderPoster(scene);
+            mediaUrl = r.mediaUrl;
+            baseFileName = r.baseFileName;
+          }
+        } else {
+          source = "ideogram_video";
+          if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+            const result = await runVideoAgentLoop({
+              runId, prompt: scene, style: style.name, maxAttempts: 2,
+              generate: async (p) => {
+                const r = await renderPoster(p);
+                return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
+              },
+            });
+            mediaUrl = result.mediaUrl;
+            baseFileName = result.baseMediaUrl ?? null;
+          } else {
+            const r = await renderPoster(scene);
+            mediaUrl = r.mediaUrl;
+            baseFileName = r.baseFileName;
+          }
+        }
+      } catch {
+        mediaUrl = null;
+        baseFileName = null;
+      }
+    }
+    if (!mediaUrl) {
+      const fallbackPrompt = buildArtworkPrompt(args.prompt, style.promptSuffix);
+      if (posterFormat === "image") {
+        source = "cloudflare_artwork";
+        const renderArtwork = async (prompt: string): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
+          const img = await cloudflareImage(prompt, runId);
+          const baseFile = `${runId}-artwork-base.jpg`;
+          await writeFile(path.join(directory, baseFile), img.bytes);
+          const renderedFile = `${runId}-artwork.png`;
+          const renderedPath = path.join(directory, renderedFile);
+          const scaledBase = `${runId}-artwork-scaled.png`;
+          await runFfmpeg(["-y", "-i", path.join(directory, baseFile), "-vf", "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350", "-frames:v", "1", path.join(directory, scaledBase)]);
+          await renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style });
+          await overlayReadabilityQa({ renderedPath, isVideo: false, title, subtitle, cta, styleName: style.name, runId,
+            reRender: (fontScale) => renderImageOverlay(path.join(directory, scaledBase), renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
+          const url = await uploadLocalFile(renderedPath, "image");
+          return { bytes: img.bytes, mediaUrl: url, baseFileName: scaledBase };
+        };
+        if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+          const result = await runImageAgentLoop({
+            runId, prompt: fallbackPrompt, style: style.name,
+            generate: async (p) => {
+              const r = await renderArtwork(p);
+              return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
+            },
+          });
+          mediaUrl = result.mediaUrl;
+          baseFileName = result.baseMediaUrl ?? null;
+        } else {
+          const r = await renderArtwork(fallbackPrompt);
+          mediaUrl = r.mediaUrl;
+          baseFileName = r.baseFileName;
+        }
+      } else {
+        source = "cloudflare_video";
+        const renderFallbackVideo = async (): Promise<{ bytes: Buffer; mediaUrl: string; baseFileName: string }> => {
+          const img = await cloudflareImage(fallbackPrompt, runId);
+          const baseFile = `${runId}-video-cloudflare-base.jpg`;
+          await writeFile(path.join(directory, baseFile), img.bytes);
+          const stillFile = `${runId}-video-fallback-still.png`;
+          await runFfmpeg(["-y", "-i", path.join(directory, baseFile), "-vf", "scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350", "-frames:v", "1", path.join(directory, stillFile)]);
+          const rawPath = path.join(directory, `${runId}-video-fallback-raw.mp4`);
+          await kenBurnsVideo(path.join(directory, stillFile), rawPath, { durationSeconds: kenBurnsDuration(), audioTrack: await ambientAudioFile() });
+          const renderedPath = path.join(directory, `${runId}-video-fallback.mp4`);
+          await renderVideoOverlay(rawPath, renderedPath, { headline: title, body: subtitle, cta, style });
+          await overlayReadabilityQa({ renderedPath, isVideo: true, title, subtitle, cta, styleName: style.name, runId,
+            reRender: (fontScale) => renderVideoOverlay(rawPath, renderedPath, { headline: title, body: subtitle, cta, style, fontScale }) });
+          const bytes = await readFile(renderedPath);
+          const url = await uploadLocalFile(renderedPath, "video");
+          return { bytes, mediaUrl: url, baseFileName: stillFile };
+        };
+        if (agentEnabled() && todayAgentCallCount() < dailyAgentCap()) {
+          const result = await runVideoAgentLoop({
+            runId, prompt: fallbackPrompt, style: style.name, maxAttempts: 2,
+            generate: async () => {
+              const r = await renderFallbackVideo();
+              return { bytes: r.bytes, mediaUrl: r.mediaUrl, baseMediaUrl: r.baseFileName };
+            },
+          });
+          mediaUrl = result.mediaUrl;
+          baseFileName = result.baseMediaUrl ?? null;
+        } else {
+          const r = await renderFallbackVideo();
+          mediaUrl = r.mediaUrl;
+          baseFileName = r.baseFileName;
+        }
+      }
     }
   }
-
   // store base file name in thumbnail_url for editability (consistent with template)
   const thumbnailName = baseFileName;
-
-  return { runId, title, kind: args.kind === "grok_video" ? "video" : "image", source, mediaUrl, caption, subtitle, style: style.name,
+  if (!mediaUrl) throw new Error("Generated asset failed before upload.");
+  return { runId, title, kind: args.kind === "video" ? "video" : "image", source, mediaUrl, caption, subtitle, style: style.name,
     templateHeadline: title, templateBody: subtitle, templateCta: cta,
-    templateBackgroundFile: isTemplate ? templateBackgroundFile : (thumbnailName ?? null) };
+    templateBackgroundFile: isTemplate ? templateBackgroundFile : (thumbnailName ?? null),
+    posterPrompt };
 }

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { jsonError } from "@/lib/http";
 import { googleAccessToken } from "@/lib/publish";
-import { falVideoReady } from "@/lib/fal-video";
+import { ideogramConfigured } from "@/lib/ideogram";
 import { metaPublishMode } from "@/lib/domain";
 import { apiAccess } from "@/lib/auth";
 
@@ -66,6 +66,6 @@ export async function GET(request: Request): Promise<Response> {
     const aiCalls = database.prepare("SELECT id,operation,model,input_tokens,output_tokens,total_tokens,duration_ms,outcome,created_at FROM ai_calls ORDER BY created_at DESC LIMIT 20").all();
     const credentialEvents = database.prepare("SELECT id,platform,event,expires_at,outcome,detail,created_at FROM credential_events ORDER BY created_at DESC LIMIT 10").all();
     return Response.json({ metrics, jobs: recentJobs, backlog, usage, aiCalls, credentialEvents,
-      configured: { falVideo: falVideoReady(), cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN), gemini: Boolean(process.env.GEMINI_API_KEY), cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET), metaMode, meta: metaMode === "live" && Boolean(process.env.META_PAGE_ID && process.env.META_PAGE_ACCESS_TOKEN && process.env.META_IG_USER_ID), google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && (process.env.GOOGLE_REFRESH_TOKEN || database.prepare("SELECT value FROM app_secrets WHERE key='google_refresh_token'").get())), publicLinks: (process.env.APP_URL ?? "http://localhost:8000").startsWith("https://") && !/localhost|127\.0\.0\.1/i.test(process.env.APP_URL ?? "http://localhost:8000") } });
+      configured: { falVideo: ideogramConfigured(), cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN), gemini: Boolean(process.env.GEMINI_API_KEY), cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET), metaMode, meta: metaMode === "live" && Boolean(process.env.META_PAGE_ID && process.env.META_PAGE_ACCESS_TOKEN && process.env.META_IG_USER_ID), google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && (process.env.GOOGLE_REFRESH_TOKEN || database.prepare("SELECT value FROM app_secrets WHERE key='google_refresh_token'").get())), publicLinks: (process.env.APP_URL ?? "http://localhost:8000").startsWith("https://") && !/localhost|127\.0\.0\.1/i.test(process.env.APP_URL ?? "http://localhost:8000") } });
   } catch (error) { return jsonError(error instanceof Error ? error.message : "Dashboard is unavailable.", 500); }
 }

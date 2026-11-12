@@ -13,7 +13,8 @@ import { PATCH as editTemplate } from "../app/api/content/[id]/route";
 import { authorizeTestDatabase } from "./auth-fixture";
 
 const envKeys = ["AI_PROVIDER", "GEMINI_API_KEY", "OPENAI_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "DATABASE_PATH", "UPLOAD_DIR", "APP_URL",
-  "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const;
+  "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET",
+  "FAL_KEY", "FAL_IDEOGRAM_SPEED", "ARTWORK_TEXT_MODE", "FAL_VIDEO_DURATION", "FAL_VIDEO_AUDIO_TRACK", "AGENT_ENABLED"] as const;
 
 async function fixture(run: (png: Buffer, directory: string) => Promise<void>): Promise<void> {
   const directory = mkdtempSync(path.join(tmpdir(), "post-house-fallback-"));
@@ -29,6 +30,12 @@ async function fixture(run: (png: Buffer, directory: string) => Promise<void>): 
   for (const name of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) delete process.env[name];
   delete process.env.CLOUDFLARE_ACCOUNT_ID;
   delete process.env.CLOUDFLARE_API_TOKEN;
+  delete process.env.FAL_KEY;
+  delete process.env.FAL_IDEOGRAM_SPEED;
+  delete process.env.ARTWORK_TEXT_MODE;
+  delete process.env.FAL_VIDEO_DURATION;
+  delete process.env.FAL_VIDEO_AUDIO_TRACK;
+  delete process.env.AGENT_ENABLED;
   try {
     authorizeTestDatabase();
     await run(readFileSync(fixturePath), directory);
@@ -139,7 +146,7 @@ test("the agent loop keeps the best-scoring asset across attempts", async () => 
 test("the old video request is rejected before calling any provider", async () => fixture(async () => {
   globalThis.fetch = async () => { throw new Error("No provider should run for a removed format."); };
   const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "video", prompt: "Weekend collection" }) }));
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "grok_video", prompt: "Weekend collection" }) }));
   assert.equal(response.status, 400);
   assert.equal(db().prepare("SELECT id FROM ai_calls").all().length, 0);
 }));

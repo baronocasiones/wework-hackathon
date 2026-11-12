@@ -198,7 +198,7 @@ export function dailyAgentCap(): number {
 
 export function todayAgentCallCount(): number {
   try {
-    const row = db().prepare("SELECT COUNT(*) n FROM ai_calls WHERE operation IN ('artwork','template_background','video','critique','style') AND created_at >= ?").get(new Date().toISOString().slice(0, 10)) as { n: number };
+    const row = db().prepare("SELECT COUNT(*) n FROM ai_calls WHERE operation IN ('artwork','template_background','video','critique','style','ideogram') AND created_at >= ?").get(new Date().toISOString().slice(0, 10)) as { n: number };
     return row?.n ?? 0;
   } catch {
     return 0;
