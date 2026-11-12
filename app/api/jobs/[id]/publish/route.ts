@@ -1,9 +1,11 @@
 import { db, nowIso } from "@/lib/db";
 import { jsonError } from "@/lib/http";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const { id } = await context.params;
   try {
     const changed = db().prepare("UPDATE publish_jobs SET scheduled_at=?,updated_at=? WHERE id=? AND status='queued'").run(nowIso(), nowIso(), id);

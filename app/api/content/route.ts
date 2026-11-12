@@ -4,14 +4,17 @@ import { db, nowIso } from "@/lib/db";
 import { storeLocalMedia, uploadToCloudinary } from "@/lib/media";
 import { jsonError } from "@/lib/http";
 import { recommendCopy } from "@/lib/generation";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   return Response.json(db().prepare("SELECT * FROM content ORDER BY created_at DESC LIMIT 30").all());
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   try {
     const form = await request.formData();
     const file = form.get("file");

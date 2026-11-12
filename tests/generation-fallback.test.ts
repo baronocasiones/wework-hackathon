@@ -9,6 +9,7 @@ import { db } from "../src/lib/db";
 import { POST as uploadContent } from "../app/api/content/route";
 import { POST as generateContent } from "../app/api/generate/route";
 import { PATCH as editTemplate } from "../app/api/content/[id]/route";
+import { authorizeTestDatabase } from "./auth-fixture";
 
 const envKeys = ["AI_PROVIDER", "GEMINI_API_KEY", "OPENAI_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "DATABASE_PATH", "UPLOAD_DIR", "APP_URL",
   "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const;
@@ -28,6 +29,7 @@ async function fixture(run: (png: Buffer, directory: string) => Promise<void>): 
   delete process.env.CLOUDFLARE_ACCOUNT_ID;
   delete process.env.CLOUDFLARE_API_TOKEN;
   try {
+    authorizeTestDatabase();
     await run(readFileSync(fixturePath), directory);
   } finally {
     globalThis.fetch = originalFetch;
@@ -77,7 +79,7 @@ test("a Cloudflare rejection does not generate artwork through Gemini or OpenAI"
     return Response.json({ success: false }, { status: 403 });
   };
   const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "artwork", prompt: "Weekend collection",
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "artwork", prompt: "Weekend collection",
       title: "Weekend collection", caption: "Browse the collection.", subtitle: "Fresh picks" }) }));
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /Cloudflare artwork failed/);
@@ -102,7 +104,7 @@ test("Gemini text alone cannot enable AI artwork", async () => fixture(async () 
   process.env.GEMINI_API_KEY = "test-gemini-key";
   globalThis.fetch = async () => { throw new Error("Gemini image generation must not run."); };
   const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "artwork", prompt: "Weekend collection",
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "artwork", prompt: "Weekend collection",
       title: "Weekend collection", caption: "Browse the collection.", subtitle: "Fresh picks" }) }));
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /CLOUDFLARE_ACCOUNT_ID/);
@@ -112,7 +114,7 @@ test("Gemini text alone cannot enable AI artwork", async () => fixture(async () 
 test("the old video request is rejected before calling any provider", async () => fixture(async () => {
   globalThis.fetch = async () => { throw new Error("No provider should run for a removed format."); };
   const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "video", prompt: "Weekend collection" }) }));
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "video", prompt: "Weekend collection" }) }));
   assert.equal(response.status, 400);
   assert.equal(db().prepare("SELECT id FROM ai_calls").all().length, 0);
 }));
@@ -132,7 +134,7 @@ test("upload fills blank title and subtitle while keeping the user's caption", a
   form.set("title", "");
   form.set("caption", "Our own caption");
   form.set("subtitle", "");
-  const response = await uploadContent(new Request("http://localhost:8000/api/content", { method: "POST", body: form }));
+  const response = await uploadContent(new Request("http://localhost:8000/api/content", { method: "POST", headers: authorizeTestDatabase(), body: form }));
   assert.equal(response.status, 201);
   const body = await response.json();
   const stored = db().prepare("SELECT title,caption,subtitle FROM content WHERE id=?").get(body.id);
@@ -157,7 +159,7 @@ test("Cloudflare template background is reused when editable text changes", asyn
     cloudflareCalls++;
     return Response.json({ success: true, result: { image: readFileSync(jpegPath).toString("base64") } });
   };
-  const request = new Request("http://localhost:8000/api/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+  const request = new Request("http://localhost:8000/api/generate", { method: "POST", headers: { "Content-Type": "application/json", ...authorizeTestDatabase() },
     body: JSON.stringify({ kind: "template", prompt: "Neighborhood craft fair", title: "", caption: "", subtitle: "" }) });
   const response = await generateContent(request);
   assert.equal(response.status, 201);
@@ -172,7 +174,7 @@ test("Cloudflare template background is reused when editable text changes", asyn
   assert.ok(existsSync(path.join(directory, String(stored?.thumbnail_url))));
   assert.equal(cloudflareCalls, 1);
   const edit = await editTemplate(new Request(`http://localhost:8000/api/content/${asset.id}`, { method: "PATCH",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ headline: "Updated fair", body: "Join us this weekend" }) }),
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ headline: "Updated fair", body: "Join us this weekend" }) }),
   { params: Promise.resolve({ id: asset.id }) });
   assert.equal(edit.status, 200);
   const updated = db().prepare("SELECT title,media_url,thumbnail_url,template_headline,template_body FROM content WHERE id=?").get(asset.id);

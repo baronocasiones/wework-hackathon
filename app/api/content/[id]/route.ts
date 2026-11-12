@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db, nowIso } from "@/lib/db";
 import { createGeneratedAsset } from "@/lib/generation";
 import { jsonError } from "@/lib/http";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,6 +10,7 @@ export const maxDuration = 60;
 const schema = z.object({ headline: z.string().trim().min(1).max(70), body: z.string().trim().min(1).max(100) });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const { id } = await context.params;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Keep the headline under 70 characters and supporting text under 100.");

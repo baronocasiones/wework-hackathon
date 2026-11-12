@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { nowIso } from "@/lib/db";
 
 export function recoverInterruptedJobs(database: DatabaseSync, timestamp = nowIso()): number {
+  database.prepare("UPDATE publish_jobs SET status='queued',error=NULL,updated_at=? WHERE status='processing' AND publish_mode='simulated'").run(timestamp);
   const result = database.prepare("UPDATE publish_jobs SET status='uncertain',error='Worker stopped while a provider request may have been in progress. Review the platform before taking action.',updated_at=? WHERE status='processing'").run(timestamp);
   return Number(result.changes);
 }

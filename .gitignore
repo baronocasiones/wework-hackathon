@@ -7,3 +7,5 @@ public/uploads/*
 !public/uploads/.gitkeep
 *.log
 *.tsbuildinfo
+.audit
+generated_images

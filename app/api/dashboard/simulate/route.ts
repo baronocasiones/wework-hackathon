@@ -1,10 +1,12 @@
 import { db, nowIso } from "@/lib/db";
 import { jsonError } from "@/lib/http";
+import { apiAccess } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
 
-export async function POST(): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   try {
     const database = db();
     const platforms = ["facebook", "instagram", "youtube"] as const;

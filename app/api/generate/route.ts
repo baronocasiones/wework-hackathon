@@ -4,6 +4,7 @@ import { db, nowIso } from "@/lib/db";
 import { createGeneratedAsset } from "@/lib/generation";
 import { allowedPlatforms } from "@/lib/domain";
 import { jsonError } from "@/lib/http";
+import { apiAccess } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,6 +13,7 @@ const schema = z.object({ kind: z.enum(["template", "artwork", "grok_video"]), p
   title: z.string().trim().max(120).optional(), caption: z.string().trim().max(2200).optional(), subtitle: z.string().trim().max(100).optional() });
 
 export async function POST(request: Request): Promise<Response> {
+  const denied = apiAccess(request); if (denied) return denied;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Add a short campaign idea and choose a format.");
   try {

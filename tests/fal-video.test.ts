@@ -7,6 +7,7 @@ import path from "node:path";
 import { db } from "../src/lib/db";
 import { createGeneratedAsset } from "../src/lib/generation";
 import { POST as generateContent } from "../app/api/generate/route";
+import { authorizeTestDatabase } from "./auth-fixture";
 
 const envKeys = ["FAL_KEY", "FAL_VIDEO_DURATION", "FAL_VIDEO_RESOLUTION", "GEMINI_API_KEY", "OPENAI_API_KEY",
   "DATABASE_PATH", "UPLOAD_DIR", "APP_URL", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const;
@@ -19,7 +20,7 @@ async function fixture(run: (directory: string) => Promise<void>): Promise<void>
   process.env.UPLOAD_DIR = directory;
   process.env.APP_URL = "http://localhost:8000";
   for (const key of envKeys) if (!(["DATABASE_PATH", "UPLOAD_DIR", "APP_URL"] as string[]).includes(key)) delete process.env[key];
-  try { await run(directory); }
+  try { authorizeTestDatabase(); await run(directory); }
   finally {
     globalThis.fetch = originalFetch;
     if (globalThis.postHouseDatabase) db().close();
@@ -76,7 +77,7 @@ test("fal Grok Lite submits a short vertical clip, downloads it, and records usa
 test("the fal Grok route refuses an absent key before making any provider request", async () => fixture(async () => {
   globalThis.fetch = async () => { throw new Error("Provider should not be called without a key."); };
   const response = await generateContent(new Request("http://localhost:8000/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "grok_video", prompt: "Blue tote" }) }));
+    headers: { "Content-Type": "application/json", ...authorizeTestDatabase() }, body: JSON.stringify({ kind: "grok_video", prompt: "Blue tote" }) }));
   assert.equal(response.status, 502);
   const body = await response.json();
   assert.match(body.error, /FAL_KEY/);

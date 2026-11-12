@@ -1,0 +1,14 @@
+ts	phase	decision	why	evidence	result
+2026-11-12T06:40:00Z	start	started plan execution after plan-mode approval	plan locked by user decisions (agent on by default, retry endpoint, steps 4->8)	plan in chat	proceeding
+2026-11-12T06:42:00Z	db	added style column to content and generation_attempts table	track chosen style and agent attempts for observability	src/lib/db.ts:58-66	tests green
+2026-11-12T06:45:00Z	styles	created curated 6-style registry with recommendStyle	consistent branding; AI picks from constrained list not free text	src/lib/styles.ts	all tests green
+2026-11-12T06:50:00Z	cloudflare	raised FLUX steps default 4->8 and made steps/model env-configurable	better image quality while staying free tier	src/lib/cloudflare.ts:20-35	typecheck clean
+2026-11-12T06:55:00Z	template	fixed FFmpeg drawtext layout with dynamic font size and fontfile env	prevent text overflow and font mismatch	src/lib/generation.ts:108-116	tests green
+2026-11-12T07:00:00Z	audio	added probeVideo and optional ambient mux for Grok videos	determine if clips have audio; allow opt-in music	src/lib/fal-video.ts:143-195	probe test pass
+2026-11-12T07:10:00Z	agent	added Gemini-vision critique loop with daily cap and prompt-injection guards	quality gate before saving; cost guardrails	src/lib/agent-critique.ts	tests green
+2026-11-12T07:20:00Z	generation	wired agent loop into artwork and video branches with fallback when over cap or disabled	apply quality gate without breaking when providers missing	src/lib/generation.ts:118-160	tests green
+2026-11-12T07:25:00Z	api	added POST /api/jobs/[id]/retry endpoint	re-queue failed jobs without recreating them	app/api/jobs/[id]/retry/route.ts	typecheck clean
+2026-11-12T07:30:00Z	dashboard	added agent metrics to dashboard response	visibility into attempts, scores, daily usage	app/api/dashboard/route.ts:55-60	build clean
+2026-11-12T07:35:00Z	ui	showed style name and added Retry button in queue UI	operator visibility and recovery	app/page.tsx	build clean
+2026-11-12T07:40:00Z	tests	updated generation-fallback expectations for new style/critique calls and 8 steps	reflect new legitimate behavior, not weakening tests	tests/generation-fallback.test.ts	22/22 pass
+2026-11-12T07:45:00Z	verify	typecheck + full test suite + production build	all green	npm run typecheck; npm test; npm run build	22 tests, build ok

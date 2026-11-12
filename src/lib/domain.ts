@@ -4,8 +4,17 @@ export const platformSchema = z.enum(["facebook", "instagram", "youtube"]);
 export type Platform = z.infer<typeof platformSchema>;
 export const mediaKindSchema = z.enum(["image", "video"]);
 export type MediaKind = z.infer<typeof mediaKindSchema>;
-export const jobStatusSchema = z.enum(["queued", "processing", "published", "failed", "uncertain", "needs_review"]);
+export const jobStatusSchema = z.enum(["queued", "processing", "published", "simulated", "failed", "uncertain", "needs_review"]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
+export const publishModeSchema = z.enum(["simulated", "live"]);
+export type PublishMode = z.infer<typeof publishModeSchema>;
+
+export function metaPublishMode(): PublishMode {
+  const mode = process.env.META_PUBLISH_MODE || "simulated";
+  const parsed = publishModeSchema.safeParse(mode);
+  if (!parsed.success) throw new Error("META_PUBLISH_MODE must be simulated or live.");
+  return parsed.data;
+}
 
 export const platformLabels: Record<Platform, string> = {
   facebook: "Facebook",
@@ -47,6 +56,7 @@ export type PublishFailureReason =
 
 export type PublishOutcome =
   | { kind: "published";    providerId: string; permalink: string }
+  | { kind: "simulated" }
   | { kind: "needs_review"; providerId: string; permalink: string | null; reason: "accepted_pending" | "uncertain" }
   | { kind: "failed";       reason: PublishFailureReason; detail: string };
 

@@ -169,6 +169,8 @@ stateDiagram-v2
     queued --> processing: claimDueJob<br/>UPDATE ... WHERE status='queued'<br/>changes = 1
     processing --> published: provider ID + confirmed permalink<br/>confirmation = confirmed
     processing --> needs_review: accepted but unconfirmed<br/>accepted_pending or uncertain
+    needs_review --> published: YouTube confirms public processing<br/>status check only
+    needs_review --> failed: YouTube reports rejected upload<br/>status check only
     processing --> failed: known block or 4xx rejection
     processing --> uncertain: ambiguous outcome<br/>or worker restart
     published --> [*]
@@ -359,7 +361,7 @@ flowchart LR
 - **Optimistic, fail-closed transitions.** `claimDueJob` updates only `WHERE status='queued'` and requires `changes === 1` (`src/lib/jobs.ts:10-14`); the worker writes results only `WHERE status='processing'` (`src/worker/index.ts:20,28`). A racing claim loses and publishes nothing.
 - **One job row per content × platform × scheduled time.** `UNIQUE(content_id, platform, scheduled_at)` (`src/lib/db.ts:25`) plus the `jobs_due` index.
 - **Tracked links are baked at schedule time.** `allowedPlatformCaption` (`src/lib/domain.ts`) appends the `/product?platform=…&campaign=<contentId>` link and truncates only the user's caption to fit platform limits. Changing `APP_URL` later does not update queued jobs.
-- **Terminal states are never auto-retried.** `published`, `failed`, `uncertain`, `needs_review` are final; `attempts` is incremented but never read, so there is no retry loop.
+- **Uploads are never auto-retried.** `published`, `failed`, and `uncertain` are final. A YouTube `needs_review` job with a provider ID can move to `published` after a read-only status check confirms public processing; the worker never uploads it again.
 - **A job becomes `published` only on a provider ID and a confirmed permalink / public processing state.** Ambiguous outcomes become `uncertain` or `needs_review`.
 
 **Rough edges an onboarding engineer must not trip on:**

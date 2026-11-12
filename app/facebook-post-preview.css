@@ -1,0 +1,55 @@
+.facebook-preview-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; margin-top: 7px; padding: 0; border: 0; background: transparent; color: #35694b; font-size: 13px; font-weight: 700; }
+.facebook-preview-trigger:hover { color: #194731; text-decoration: underline; }
+.facebook-preview-trigger:focus-visible { outline: 3px solid #a9d0b4; outline-offset: 3px; border-radius: 3px; }
+
+.fb-preview-dialog {
+  width: min(680px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid #dce4dd;
+  border-radius: 18px;
+  background: #fff;
+  color: #19241d;
+  box-shadow: 0 24px 80px rgba(15, 35, 27, .25);
+}
+
+.fb-preview-dialog::backdrop { background: rgba(17, 29, 25, .66); }
+.fb-preview-shell { padding: 24px; }
+.fb-preview-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.fb-preview-heading-row h2 { margin: 3px 0 0; font: 700 24px/1.2 Manrope, sans-serif; letter-spacing: -.04em; }
+.fb-preview-eyebrow { margin: 0; color: #60806b; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+.fb-preview-close { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border: 1px solid #dfe6e0; border-radius: 50%; background: #f6f8f6; color: #263f31; cursor: pointer; }
+.fb-preview-close:hover { background: #eaf0eb; }
+.fb-preview-close:focus-visible { outline: 3px solid #287b54; outline-offset: 2px; }
+.fb-preview-disclosure { margin: 16px 0; padding: 11px 13px; border: 1px solid #dbe8df; border-radius: 9px; background: #f1f7f2; color: #315943; font-size: 13px; font-weight: 650; line-height: 1.4; }
+.fb-preview-context { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 13px; }
+.fb-preview-context-text { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.fb-preview-status { padding: 5px 9px; border-radius: 20px; background: #eaf2ec; color: #376247; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.fb-preview-post-title { color: #4f5d54; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.fb-preview-schedule { color: #68766b; font-size: 12px; }
+.fb-preview-canvas { margin: 0 -24px; padding: 24px; background: #f0f2f5; }
+.fb-preview-card { width: min(100%, 520px); margin: auto; overflow: hidden; border: 1px solid #e1e4e8; border-radius: 8px; background: #fff; box-shadow: 0 2px 7px rgba(21, 29, 37, .06); color: #1c1e21; font-family: Arial, Helvetica, sans-serif; }
+.fb-preview-author { display: flex; align-items: center; gap: 9px; padding: 12px 16px 0; }
+.fb-preview-avatar { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #dce9e1; color: #23563a; font: 700 18px Arial, sans-serif; }
+.fb-preview-avatar img { width: 25px; height: 25px; }
+.fb-preview-author-copy { display: grid; gap: 3px; min-width: 0; }
+.fb-preview-author-copy strong { font-size: 14px; line-height: 1.2; }
+.fb-preview-author-copy > span { display: inline-flex; align-items: center; gap: 4px; color: #65676b; font-size: 12px; }
+.fb-preview-caption { margin: 12px 16px 14px; font-size: 14px; line-height: 1.48; overflow-wrap: anywhere; white-space: pre-wrap; }
+.fb-preview-media { display: grid; place-items: center; min-height: 180px; background: #141a17; }
+.fb-preview-media img, .fb-preview-media video { display: block; width: 100%; max-height: min(56vh, 540px); object-fit: contain; }
+.fb-preview-actions { display: flex; align-items: center; justify-content: space-around; gap: 8px; padding: 10px 12px; border-top: 1px solid #e4e6e9; color: #65676b; font-size: 13px; font-weight: 600; user-select: none; }
+.fb-preview-actions span { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; }
+.fb-preview-footnote { margin: 15px 0 0; color: #68776b; font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 600px) {
+  .fb-preview-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 13px; }
+  .fb-preview-shell { padding: 16px; }
+  .fb-preview-heading-row h2 { font-size: 21px; }
+  .fb-preview-canvas { margin: 0 -16px; padding: 16px 8px; }
+  .fb-preview-actions { font-size: 12px; }
+  .fb-preview-actions span { gap: 4px; }
+}

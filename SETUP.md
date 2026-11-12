@@ -1,10 +1,12 @@
-# Connect accounts for live publishing
+# Set up the hackathon demo
 
-The studio works locally for content previews and demo sales without platform credentials. Live publishing needs the accounts below. Keep every secret in `/home/adrian/codes/wework-hackathon/.env.local`. Do not paste keys or tokens into chat, screenshots, or the repository.
+The studio works locally for content previews, Facebook and Instagram simulated posts, and demo sales. No Meta account setup is needed. Keep any other service secrets in `/home/adrian/codes/wework-hackathon/.env.local`. Do not paste keys or tokens into chat, screenshots, or the repository.
 
 ## Create the local configuration
 
 From `/home/adrian/codes/wework-hackathon`, copy `.env.example` to `.env.local`. Fill in the values as you set up each service. Keep `.env.local` out of Git. Restart both the app and the scheduling worker after changing it.
+
+Keep `META_PUBLISH_MODE=simulated` and leave `META_PAGE_ID`, `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID` blank. Create or upload content, choose Facebook or Instagram, and press **Post now** or set a schedule. The worker changes each due job to **Simulated post**. These jobs make zero Meta requests and have no Meta post ID or link. The dashboard keeps their counts apart from live posts. The local product preview links can still record demo purchases; sample engagement and sales are labeled demo data.
 
 ## Create Publication Materials and text
 
@@ -20,9 +22,9 @@ To test either Publication Materials option, create an API token with Workers AI
 3. Leave `FAL_VIDEO_DURATION=5` and `FAL_VIDEO_RESOLUTION=720p` for the first billed test. At [current fal pricing](https://fal.ai/models/xai/grok-imagine-video/v1.5/lite/text-to-video/api), this text-to-video test costs about $0.15. For the final 15-second Reel, set the duration to 15. Restart the app after changing the file.
 4. Use **Grok motion video** in the studio. The app requests a 9:16 clip through fal's Lite text-to-video endpoint, waits for the queue, saves the MP4, and shows it in the preview. The AI usage log records the call; token fields remain unavailable because the video response does not provide token counts.
 
-## Host media for Meta
+## Host media for live publishing only
 
-Instagram fetches media from a public HTTPS URL. A local `localhost` URL is useful for preview but cannot be fetched by Meta.
+The local Meta simulation works with `localhost` media and needs no tunnel. For a deliberate live integration later, Instagram fetches media from a public HTTPS URL.
 
 1. Find the cloud name, API key, and API secret in your [Cloudinary console](https://console.cloudinary.com/).
 2. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` in `.env.local`.
@@ -30,9 +32,11 @@ Instagram fetches media from a public HTTPS URL. A local `localhost` URL is usef
 
 Keep the API secret on the server. The app uploads media to Cloudinary before a live publish request.
 
-If people outside your computer need to open the demo product link, set a strong `STUDIO_PASSWORD` in `.env.local`, expose `http://localhost:8000` through a temporary public HTTPS tunnel, and set `APP_URL` to that tunnel URL. The browser will ask for `STUDIO_USERNAME` and `STUDIO_PASSWORD` before opening the studio; the product page remains public. Keep `GOOGLE_REDIRECT_URI` at the exact URL registered in Google Cloud. A tunnel is optional for a local presentation.
+Before exposing an unregistered studio through a public HTTPS tunnel, set a strong `STUDIO_PASSWORD` in `.env.local` as its first-owner setup key. Visit `/register`, enter an email, a new account password of at least 12 characters, and the setup key. Registration closes after the first account is created. Use `/login` with that email and account password afterward; **Sign out** revokes the current session. Without a setup key, first registration works only on localhost. To let other people open the demo product link, expose `http://localhost:8000` through a temporary HTTPS tunnel and set `APP_URL` to that URL. The product page remains public. Keep `GOOGLE_REDIRECT_URI` at the exact URL registered in Google Cloud. A tunnel is optional for a local presentation.
 
-## Connect a Facebook Page and Instagram account
+## Connect a Facebook Page and Instagram account for live mode only
+
+Live Meta publishing is outside this hackathon demo. It can run only when `META_PUBLISH_MODE=live` is set deliberately. The credentials below are not needed for simulation.
 
 1. Use a Facebook Page that your team controls. Link an Instagram professional account to that Page in Meta Business settings.
 2. Create a [Meta developer app](https://developers.facebook.com/apps/). Add the team member who authorizes the Page as an app role while the app is in development mode.
