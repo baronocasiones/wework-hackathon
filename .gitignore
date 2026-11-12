@@ -10,3 +10,4 @@ public/uploads/*
 .audit
 generated_images
 scripts/eval-quality.ts
+scripts/smoke-ideogram.ts
