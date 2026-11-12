@@ -94,6 +94,7 @@ export function db(): DatabaseSync {
   if (!contentColumns.some((column) => column.name === "template_body")) connection.exec("ALTER TABLE content ADD COLUMN template_body TEXT");
   if (!contentColumns.some((column) => column.name === "subtitle")) connection.exec("ALTER TABLE content ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''");
   if (!contentColumns.some((column) => column.name === "style")) connection.exec("ALTER TABLE content ADD COLUMN style TEXT");
+  if (!contentColumns.some((column) => column.name === "template_cta")) connection.exec("ALTER TABLE content ADD COLUMN template_cta TEXT");
   connection.exec(`
     CREATE TABLE IF NOT EXISTS generation_attempts (
       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, attempt INTEGER NOT NULL, kind TEXT NOT NULL,
